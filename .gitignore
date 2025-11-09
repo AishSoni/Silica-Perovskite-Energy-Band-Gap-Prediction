@@ -1,0 +1,52 @@
+# Add this to your .gitignore file to keep API keys secure
+.env
+*.env
+.env.local
+.env.production
+.env.staging
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+perovskite/
+
+# Data files
+materials_data/
+simple_materials_data/
+*.csv
+*.json
+*.h5
+*.hdf5
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+/api_docs
+# OS
+.DS_Store
+Thumbs.db
