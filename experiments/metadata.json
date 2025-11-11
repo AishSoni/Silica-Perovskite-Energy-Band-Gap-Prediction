@@ -1,0 +1,134 @@
+{
+  "project_name": "Perovskite Bandgap Prediction",
+  "task": "Reproduce and extend perovskite bandgap prediction using ML",
+  "data_source": "Materials Project API",
+  "download_date": "2025-10-11",
+  "api_version": "mp-api>=0.41.0",
+  "python_version": "3.11+",
+  "random_seed": 42,
+  
+  "system_info": {
+    "os": "Windows",
+    "note": "Run get_system_info() from utils.py for complete details"
+  },
+  
+  "data_statistics": {
+    "source_files": [
+      "materials_data/all_perovskite_complete_attributes.csv",
+      "materials_data/all_perovskite_materials_core.csv"
+    ],
+    "total_materials": "TBD - computed during data loading",
+    "materials_with_bandgap": "TBD",
+    "bandgap_range": "TBD"
+  },
+  
+  "datasets": {
+    "A_all_perovskites": {
+      "description": "All double perovskites including metals",
+      "filter": "none",
+      "expected_size": "~4735 materials (per original paper)"
+    },
+    "B_nonmetals_only": {
+      "description": "Exclude metallic materials",
+      "filter": "band_gap >= 0.1 eV",
+      "note": "Expected better regression accuracy per original paper"
+    }
+  },
+  
+  "imputation_strategies": [
+    "mean",
+    "median",
+    "knn",
+    "mice",
+    "zero"
+  ],
+  
+  "feature_engineering": {
+    "target_features": 303,
+    "note": "Aiming for ~300 features as in original paper",
+    "sources": [
+      "Elemental properties (matminer magpie preset)",
+      "Stoichiometric features",
+      "Structural features (lattice parameters)",
+      "Derived features (ratios, differences)"
+    ]
+  },
+  
+  "preprocessing": {
+    "duplicate_removal": "formula_pretty + spacegroup_symbol",
+    "scaling": "RobustScaler",
+    "train_test_split": 0.2,
+    "stratification": "For classification only",
+    "smote": "For classification if imbalance_ratio > 1.5"
+  },
+  
+  "models": {
+    "primary_regression": "LightGBM",
+    "primary_classification": "XGBoost",
+    "baselines": [
+      "RandomForest",
+      "XGBoost/LightGBM (alternate)",
+      "CatBoost",
+      "MLP",
+      "SVR/LogisticRegression"
+    ]
+  },
+  
+  "hyperparameter_search": {
+    "method": "GridSearchCV or Optuna",
+    "cv_folds": 5,
+    "early_stopping": "50-100 rounds for gradient boosting"
+  },
+  
+  "evaluation_metrics": {
+    "regression": [
+      "MAE",
+      "RMSE",
+      "R²",
+      "MSE",
+      "Median_AE",
+      "Percentage with >25% error"
+    ],
+    "classification": [
+      "Accuracy",
+      "Precision",
+      "Recall",
+      "F1-Score",
+      "ROC-AUC"
+    ]
+  },
+  
+  "reproducibility": {
+    "seed": 42,
+    "seed_libraries": [
+      "random",
+      "numpy",
+      "sklearn",
+      "lightgbm",
+      "xgboost",
+      "optuna"
+    ],
+    "version_tracking": "See get_system_info() output",
+    "material_ids": "Saved in supplementary data"
+  },
+  
+  "outputs": {
+    "models": "models/",
+    "figures": "figures/",
+    "results": "results/",
+    "paper": "paper/"
+  },
+  
+  "comparison_to_original": {
+    "paper": "Sradhasagar et al., Solar Energy 2024",
+    "dataset": "ABC₂D₆ perovskites from Materials Project",
+    "features": "~303 elemental and structural descriptors",
+    "evaluation": "Same metrics (MAE, RMSE, R², accuracy)",
+    "extensions": [
+      "Multiple imputation strategies comparison",
+      "Additional baseline models",
+      "SHAP explainability analysis",
+      "Optuna hyperparameter optimization"
+    ]
+  }
+}

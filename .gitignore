@@ -1,9 +1,10 @@
-# Add this to your .gitignore file to keep API keys secure
+# API Keys and Environment Variables
 .env
 *.env
 .env.local
 .env.production
 .env.staging
+config.py
 
 # Python
 __pycache__/
@@ -23,30 +24,100 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual Environment
 venv/
 env/
 ENV/
+env.bak/
+venv.bak/
 perovskite/
 
-# Data files
-materials_data/
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data files - Keep structure but ignore large data
+data/raw/*.csv
+data/raw/*.json
+data/processed/*.csv
+data/processed/*.pkl
+data/processed/*.joblib
+materials_data/complete_database/
+materials_data/*.csv
+materials_data/*.json
 simple_materials_data/
-*.csv
-*.json
 *.h5
 *.hdf5
+*.npy
+*.npz
 
-# IDE
+# Model files - too large for git
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+models/*.pth
+models/*.onnx
+
+# Results and outputs
+results/*.csv
+results/*.txt
+figures/*.png
+figures/*.jpg
+figures/*.svg
+figures/*.pdf
+catboost_info/
+
+# Experiments and logs
+experiments/*.log
+*.log
+mlruns/
+wandb/
+
+# IDE and Editor
 .vscode/
 .idea/
 *.swp
 *.swo
-/api_docs
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
+
+# Documentation that shouldn't be tracked
+/api_docs/
+AGENTS.md
+
+# Test and temporary files
+test_shap_fix.png
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# Don't ignore these important files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
+!results/.gitkeep
+!figures/.gitkeep
+!experiments/metadata.json
+!experiments/query_config.yaml
+!experiments/system_info.json

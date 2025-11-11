@@ -1,0 +1,16 @@
+{
+  "python_version": "3.12.10 (main, Apr  9 2025, 04:06:22) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+  "timestamp": "20251111_161441",
+  "random_seed": 42,
+  "numpy_version": "2.3.3",
+  "pandas_version": "2.3.3",
+  "sklearn_version": "1.7.2",
+  "lightgbm_version": "4.6.0",
+  "xgboost_version": "3.1.1",
+  "catboost_version": "1.2.8",
+  "matminer_version": "0.9.3",
+  "pymatgen_version": "unknown",
+  "mp_api_version": "unknown"
+}

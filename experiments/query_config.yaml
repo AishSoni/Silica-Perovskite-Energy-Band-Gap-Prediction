@@ -1,0 +1,85 @@
+# Query configuration for Materials Project API
+# Used to download perovskite materials data
+
+query_parameters:
+  # Chemical formula pattern
+  formula_pattern: "ABC2D6"  # Double perovskite pattern
+  
+  # Element constraints (if used)
+  # elements: []  # Specific elements to include
+  # exclude_elements: []  # Elements to exclude
+  
+  # Number of elements in formula
+  num_elements:
+    min: 4
+    max: 6
+  
+  # Band gap constraints (eV)
+  band_gap:
+    min: 0.0
+    max: 10.0
+  
+  # Thermodynamic stability
+  energy_above_hull:
+    max: 0.2  # eV/atom (materials within 0.2 eV of hull are potentially synthesizable)
+  
+  # Number of sites in unit cell
+  nsites:
+    min: 1
+    max: 200
+
+# Fields to download from Materials Project
+fields:
+  - material_id
+  - formula_pretty
+  - elements
+  - nelements
+  - band_gap
+  - is_gap_direct
+  - formation_energy_per_atom
+  - energy_above_hull
+  - density
+  - volume
+  - nsites
+  - symmetry
+  - structure  # Optional: only if needed for graph neural networks
+
+# Data filtering (post-download)
+filters:
+  remove_metals:
+    enabled: true
+    threshold: 0.1  # eV (materials with band_gap < 0.1 are considered metallic)
+  
+  remove_duplicates:
+    enabled: true
+    keys:
+      - formula_pretty
+      - spacegroup_symbol
+
+# Dataset variants
+dataset_variants:
+  all_perovskites:
+    description: "All double perovskites including metals"
+    apply_metal_filter: false
+  
+  nonmetal_perovskites:
+    description: "Semiconducting and insulating perovskites only"
+    apply_metal_filter: true
+    band_gap_min: 0.1
+
+# Notes
+notes: |
+  This configuration reproduces the dataset selection from:
+  "Machine Learning for Predicting Bandgap Energies of Double Perovskites"
+  Sradhasagar et al., Solar Energy, 2024
+  
+  The original paper used ~4735 ABC₂D₆ double perovskites from Materials Project.
+  
+  Key criteria:
+  - Double perovskite structure (ABC₂D₆)
+  - Band gap data available
+  - Energy above hull < 0.2 eV/atom (thermodynamically favorable)
+  
+  Two dataset variants are used:
+  1. All materials (including metals with band_gap ~ 0)
+  2. Non-metals only (band_gap >= 0.1 eV) - expected better regression performance

@@ -1,0 +1,10 @@
+Materials Data Summary
+=====================
+
+Total materials: 986
+Date downloaded: 2025-10-11 17:40:06
+
+Theoretical vs Experimental: {True: 623, False: 363}
+Band gap range: 0.000 - 4.155 eV
+Energy above hull range: 0.000000 - 5.074607 eV/atom
+Number of sites range: 5 - 90
