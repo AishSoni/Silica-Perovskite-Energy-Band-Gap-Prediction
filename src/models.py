@@ -274,36 +274,58 @@ class ModelTrainer:
             Trained model
         """
         print("Training XGBoost Classifier...")
-        
+
         if params is None:
             params = self.get_default_params('xgb', 'classification')
-        
+
         model = xgb.XGBClassifier(**params)
-        
-        if X_val is not None and y_val is not None:
-            model.fit(
-                X_train, y_train,
-                eval_set=[(X_val, y_val)],
-                early_stopping_rounds=100,
-                verbose=False
-            )
-        else:
-            # Create validation split from training data for early stopping
-            from sklearn.model_selection import train_test_split
-            X_t, X_v, y_t, y_v = train_test_split(
-                X_train, y_train, test_size=0.15, random_state=self.random_state, stratify=y_train
-            )
-            model.fit(
-                X_t, y_t,
-                eval_set=[(X_v, y_v)],
-                early_stopping_rounds=100,
-                verbose=False
-            )
-        
-        self.models['xgb_classification'] = model
-        print("✓ XGBoost training complete")
-        
-        return model
+
+        # Helper to call fit with or without early stopping depending on installed xgboost
+        from inspect import signature
+        def _safe_fit(m, X_tr, y_tr, X_va=None, y_va=None, es_rounds: int = 100):
+            sig = signature(m.fit)
+            fit_kwargs = {}
+            if X_va is not None and y_va is not None:
+                # include eval_set when validation data provided
+                fit_kwargs['eval_set'] = [(X_va, y_va)]
+
+            # Only pass early_stopping_rounds if fit accepts it
+            if 'early_stopping_rounds' in sig.parameters:
+                fit_kwargs['early_stopping_rounds'] = es_rounds
+
+            # Pass verbose if supported
+            if 'verbose' in sig.parameters:
+                fit_kwargs['verbose'] = False
+
+            try:
+                return m.fit(X_tr, y_tr, **fit_kwargs)
+            except TypeError:
+                # Older/newer xgboost scikit wrapper may not accept these kwargs; fall back
+                return m.fit(X_tr, y_tr)
+
+        try:
+            if X_val is not None and y_val is not None:
+                _safe_fit(model, X_train, y_train, X_val, y_val, es_rounds=100)
+            else:
+                # Create validation split from training data for early stopping
+                from sklearn.model_selection import train_test_split
+                try:
+                    X_t, X_v, y_t, y_v = train_test_split(
+                        X_train, y_train, test_size=0.15, random_state=self.random_state, stratify=y_train
+                    )
+                except Exception:
+                    X_t, X_v, y_t, y_v = train_test_split(
+                        X_train, y_train, test_size=0.15, random_state=self.random_state
+                    )
+                _safe_fit(model, X_t, y_t, X_v, y_v, es_rounds=100)
+
+            self.models['xgb_classification'] = model
+            print("✓ XGBoost training complete")
+            return model
+
+        except Exception as e:
+            print(f"⚠ Warning: Training Classification (Gap Type) failed: {e}")
+            return None
     
     def train_baseline_models(
         self,

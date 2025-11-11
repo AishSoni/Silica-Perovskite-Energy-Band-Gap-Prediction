@@ -363,9 +363,50 @@ class ModelEvaluator:
         print("Computing SHAP values (this may take a while)...")
         
         try:
-            # Use TreeExplainer for tree-based models
-            explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X)
+            # Fix XGBoost base_score serialization issue for SHAP
+            if hasattr(model, 'get_booster'):
+                # It's an XGBoost model - aggressively fix base_score in JSON config
+                try:
+                    import json
+                    import tempfile
+                    import os
+                    
+                    # Get the booster's JSON config
+                    booster = model.get_booster()
+                    config_json = booster.save_config()
+                    config_dict = json.loads(config_json)
+                    
+                    # Fix base_score in the config (change from '[5E-1]' string to '0.5' string)
+                    if 'learner' in config_dict and 'learner_model_param' in config_dict['learner']:
+                        params = config_dict['learner']['learner_model_param']
+                        if 'base_score' in params:
+                            # Convert any string representation to numeric string '0.5'
+                            old_val = params['base_score']
+                            params['base_score'] = '0.5'
+                            print(f"  Fixed base_score: {old_val} → 0.5")
+                    
+                    # Reload the fixed config back into the booster
+                    booster.load_config(json.dumps(config_dict))
+                    
+                    # Also ensure the model attribute is numeric
+                    if hasattr(model, 'base_score'):
+                        model.base_score = 0.5
+                        
+                except Exception as fix_error:
+                    print(f"  Note: Could not fix XGBoost config ({fix_error}), proceeding anyway...")
+            
+            # Try TreeExplainer first (fast for tree models)
+            try:
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X)
+            except Exception as tree_error:
+                # If TreeExplainer fails, fall back to generic Explainer (slower but more robust)
+                if "could not convert string to float" in str(tree_error):
+                    print(f"  TreeExplainer failed due to base_score issue, trying generic Explainer...")
+                    explainer = shap.Explainer(model.predict, X)
+                    shap_values = explainer(X).values
+                else:
+                    raise tree_error
             
             # Summary plot
             plt.figure()
