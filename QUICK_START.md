@@ -26,8 +26,20 @@ $env:MP_API_KEY = "your_materials_project_api_key"
 Get your key at: https://next-gen.materialsproject.org/api
 
 ### Step 3: Run Pipeline
-```powershell
-.\run_all.ps1
+```
+# Regression (default)
+python run_pipeline.py F10                    # Train regression with F10
+python run_pipeline.py F10 F22                # Train regression with both
+
+# Classification
+python run_pipeline.py --task classification F10      # Bandgap type prediction
+python run_pipeline.py --task classification F10 F22  # Multiple feature sets
+
+# Skip SHAP (faster)
+python run_pipeline.py --no-shap F10
+
+# Help
+python run_pipeline.py --help
 ```
 
 That's it! The pipeline will:
