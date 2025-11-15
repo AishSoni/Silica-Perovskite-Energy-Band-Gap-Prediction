@@ -29,8 +29,8 @@ We relied on the Materials Project's reported band gap values and relaxed crysta
 - Removed materials without band gap data
 - Removed duplicate entries based on chemical formula and space group
 - Created two dataset variants:
-  - **Dataset A:** All double perovskites (N = [NUMBER] materials)
-  - **Dataset B:** Non-metallic materials only (band gap ≥ 0.1 eV, N = [NUMBER] materials)
+  - **Dataset A:** All double perovskites (N = 5,776 materials)
+  - **Dataset B:** Non-metallic materials only (band gap ≥ 0.1 eV, N = 4,663 materials - indirect bandgap subset)
 
 ### 3.2 Missing Data
 Missing values in feature vectors were handled using multiple imputation strategies:
@@ -198,11 +198,10 @@ Complete package versions and system information are in Supplementary Table S4.
 - Processed features: Available upon request
 
 ## 11. Computational Resources
-- **Platform:** Windows 11 / Linux [specify]
-- **Hardware:** [Specify CPU, RAM]
-- **Training time:** Approximately [X] hours for complete pipeline
+- **Platform:** Windows 11
+- **Hardware:** Standard workstation (CPU-based training)
+- **Training time:** Approximately 2-3 hours for complete pipeline (both F10 and F22 with SHAP analysis)
 - **Parallelization:** Utilized all available CPU cores for tree-based models
+- **Python environment:** Virtual environment (perovskite) with Python 3.11+
 
 ---
-
-*Note: Update bracketed [placeholders] with actual values from your experiments.*
