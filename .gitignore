@@ -1,12 +1,23 @@
-# API Keys and Environment Variables
+# ============================================================================
+# Perovskite Bandgap Prediction - .gitignore
+# ============================================================================
+
+# ============================================================================
+# SECRETS & CREDENTIALS
+# ============================================================================
 .env
 *.env
 .env.local
 .env.production
 .env.staging
 config.py
+*.key
+*.pem
+secrets/
 
-# Python
+# ============================================================================
+# PYTHON
+# ============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -30,94 +41,202 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.pyc
 
-# Virtual Environment
+# ============================================================================
+# VIRTUAL ENVIRONMENTS
+# ============================================================================
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
 perovskite/
+.venv/
 
-# Jupyter Notebook
+# ============================================================================
+# JUPYTER NOTEBOOK
+# ============================================================================
 .ipynb_checkpoints
 *.ipynb
+notebooks/.ipynb_checkpoints/
 
-# Data files - Keep structure but ignore large data
+# ============================================================================
+# DATA FILES (Large files excluded from version control)
+# ============================================================================
+# Raw data
 data/raw/*.csv
 data/raw/*.json
-data/processed/*.csv
-data/processed/*.pkl
-data/processed/*.joblib
+data/raw/*.txt
+
+# Processed data
+data/processed/**/*.csv
+data/processed/**/*.pkl
+data/processed/**/*.joblib
+data/processed/**/*.npy
+data/processed/**/*.npz
+
+# Materials data
 materials_data/complete_database/
 materials_data/*.csv
 materials_data/*.json
+materials_data/*.txt
 simple_materials_data/
+
+# Large data formats
 *.h5
 *.hdf5
 *.npy
 *.npz
+*.parquet
 
-# Model files - too large for git
-models/*.pkl
-models/*.joblib
-models/*.h5
-models/*.pt
-models/*.pth
-models/*.onnx
+# ============================================================================
+# MODEL FILES (Too large for git)
+# ============================================================================
+models/**/*.pkl
+models/**/*.joblib
+models/**/*.h5
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+models/**/*.pb
+models/**/*.tflite
+*.model
+*.weights
 
-# Results and outputs
+# ============================================================================
+# OUTPUTS & RESULTS
+# ============================================================================
+# Results
 results/*.csv
 results/*.txt
-figures/*.png
-figures/*.jpg
-figures/*.svg
-figures/*.pdf
+results/*.json
+results/*_comparison.csv
+results/*_summary.json
+
+# Figures and plots
+figures/**/*.png
+figures/**/*.jpg
+figures/**/*.jpeg
+figures/**/*.svg
+figures/**/*.pdf
+
+# Validation plots
+validation/**/*.png
+validation/**/*.pdf
+
+# CatBoost temporary files
 catboost_info/
 
-# Experiments and logs
+# ============================================================================
+# EXPERIMENTS & LOGS
+# ============================================================================
 experiments/*.log
+experiments/**/*.log
 *.log
+logs/
 mlruns/
 wandb/
+runs/
+lightning_logs/
 
-# IDE and Editor
+# ============================================================================
+# IDE & EDITORS
+# ============================================================================
+# VS Code
 .vscode/
+*.code-workspace
+
+# PyCharm
 .idea/
-*.swp
-*.swo
+*.iml
+
+# Sublime Text
 *.sublime-project
 *.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Eclipse
 .project
 .pydevproject
+.settings/
 
-# OS
+# ============================================================================
+# OPERATING SYSTEM
+# ============================================================================
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
+.AppleDouble
+.LSOverride
+
+# Windows
 ehthumbs.db
 Thumbs.db
 Desktop.ini
+$RECYCLE.BIN/
 
-# Documentation that shouldn't be tracked
-/api_docs/
-AGENTS.md
+# Linux
+.directory
+.Trash-*/
 
-# Test and temporary files
-test_shap_fix.png
+# ============================================================================
+# TEMPORARY & CACHE FILES
+# ============================================================================
 *.tmp
 *.temp
 *.bak
+*.swp
 *.cache
+*.pid
+*.seed
+*.pid.lock
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
 
-# Don't ignore these important files
+# ============================================================================
+# DOCUMENTATION (Internal/redundant docs)
+# ============================================================================
+AGENTS.md
+*_INTERNAL.md
+*_TEMP.md
+api_docs/
+
+# ============================================================================
+# TEST & DEBUG FILES
+# ============================================================================
+test_output/
+debug/
+scratch/
+*.test.py
+*_test_temp.py
+
+# ============================================================================
+# KEEP THESE IMPORTANT FILES (Exceptions)
+# ============================================================================
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/*/.gitkeep
 !models/.gitkeep
+!models/*/.gitkeep
 !results/.gitkeep
 !figures/.gitkeep
+!figures/*/.gitkeep
+!validation/.gitkeep
 !experiments/metadata.json
 !experiments/query_config.yaml
 !experiments/system_info.json
+!README.md
+!requirements.txt
+!.gitignore

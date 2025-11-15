@@ -1,355 +1,310 @@
-# Materials Project API Data Downloader Suite
+# Perovskite Bandgap Prediction using Machine Learning
 
-✅ **Comprehensive Solution** - Download anything from focused datasets to the complete Materials Project database.
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Materials Project](https://img.shields.io/badge/data-Materials%20Project-green.svg)](https://materialsproject.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project provides a complete suite of tools to download materials data from the Materials Project database using their API. The Materials Project is the world's largest database of computed materials properties with over 150,000 materials and growing.
+High-accuracy machine learning pipeline for predicting electronic bandgaps and bandgap types of double perovskite materials using compositional and structural features from DFT calculations.
 
-## 🎯 Three Download Options
-
-### 🎯 **Focused Downloads** (`download_data.py`)
-- **Purpose**: Specific material studies (e.g., perovskites, semiconductors)
-- **Size**: 100 MB - 2 GB
-- **Time**: Minutes to 1 hour
-- **Best for**: Learning, testing, specific research questions
-
-### 🚀 **Priority Downloads** (`download_priority_data.py`) - **RECOMMENDED**
-- **Purpose**: Core datasets most researchers need
-- **Size**: 5-15 GB (priority-based selection)
-- **Time**: 30 minutes - 2 hours
-- **Best for**: Most research projects, getting started quickly
-
-### 🌐 **Complete Downloads** (`download_all_data.py`)
-- **Purpose**: Entire Materials Project database
-- **Size**: 50+ GB (everything available)
-- **Time**: Hours to days
-- **Best for**: Comprehensive research, data mining, ML training
+---
 
 ## 🎯 Key Features
 
-- ✅ **Multiple Download Strategies** - Choose based on your research needs
-- ✅ **Optimized for Large Downloads** - Implements MP API best practices
-- ✅ **Smart Field Selection** - Downloads all available fields automatically
-- ✅ **Progress Tracking** - Real-time progress and detailed logging
-- ✅ **Error Recovery** - Robust error handling and resume capability
-- ✅ **Multiple Formats** - CSV, JSON, and metadata files
-- ✅ **Rate Limit Compliance** - Respects API limits and fair use
+- ✅ **Outstanding Performance**: R² = 0.88, MAE = 0.35 eV (2.2× better than targets)
+- ✅ **Dual Tasks**: Bandgap regression + type classification (Direct vs Indirect)  
+- ✅ **SHAP Analysis**: Explainable AI with feature importance visualization
+- ✅ **Multiple Models**: LightGBM, XGBoost, Random Forest, CatBoost, MLP
+- ✅ **Automated Pipeline**: End-to-end workflow from data download to evaluation
+- ✅ **Production Ready**: Robust error handling, validation plots, comprehensive metrics
 
-## 📁 Project Structure
+---
 
-### Core Scripts
-- **`download_data.py`** - Focused downloads (original) ✅ **WORKING**
-- **`download_priority_data.py`** - Priority datasets ⭐ **NEW & RECOMMENDED**
-- **`download_all_data.py`** - Complete database ⭐ **NEW**
-- **`demo_downloads.py`** - Interactive demo and exploration ⭐ **NEW**
+## 📊 Results Summary
 
-### Configuration & Documentation
-- **`config.py`** - Configuration management with environment variables
-- **`test_config.py`** - Configuration testing script
-- **`DOWNLOAD_GUIDE.md`** - **Complete usage guide** ⭐ **NEW**
-- **`USAGE_GUIDE.md`** - Detailed examples for focused downloads
-- **`.env`** - Environment variables (API keys and settings)
+### Regression (Bandgap Prediction)
 
-### Data & Docs
-- **`materials_data/`** - Output directory for downloaded data
-- **`api_docs/`** - Complete Materials Project API documentation
-- **`.gitignore`** - Keeps sensitive files secure
+| Feature Set | Best Model | R² | MAE (eV) | RMSE (eV) |
+|-------------|------------|-----|----------|-----------|
+| **F22** (22 features) | LightGBM | **0.8836** | **0.3631** | 0.5639 |
+| **F10** (10 features) | LightGBM | 0.8712 | 0.3934 | 0.5933 |
+
+**Target**: R² ≥ 0.40, MAE ≤ 0.45 eV  
+**Achieved**: 2.2× better R², 23% lower MAE ✨
+
+### Classification (Bandgap Type: Direct vs Indirect)
+
+| Feature Set | Best Model | Accuracy | F1-Score | Precision | Recall |
+|-------------|------------|----------|----------|-----------|--------|
+| **F10** (10 features) | LightGBM | **0.8971** | **0.8908** | 0.8919 | 0.8971 |
+
+**Target**: Accuracy ≥ 0.80, F1 ≥ 0.80  
+**Achieved**: 12% above target ✨
+
+---
 
 ## 🚀 Quick Start
 
-### 1. Get Your API Key
-1. Go to [materialsproject.org](https://next-gen.materialsproject.org/)
-2. Create an account or log in
-3. Navigate to your [API dashboard](https://next-gen.materialsproject.org/dashboard)
-4. Copy your API key (32 characters for new API)
+### 1. Setup Environment
 
-### 2. Configure Your API Key
-**Set your API key in the `.env` file:**
+```bash
+# Clone repository
+git clone https://github.com/AishSoni/Silica-Perovskite-Energy-Band-Gap-Prediction.git
+cd Silica-Perovskite-Energy-Band-Gap-Prediction
+
+# Create virtual environment
+python -m venv perovskite
+source perovskite/bin/activate  # On Windows: perovskite\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Configure API Access
+
+Create a `.env` file with your Materials Project API key:
 
 ```env
-MP_API_KEY=your_32_character_api_key_here
+MAPI_KEY=your_api_key_here
 ```
 
-### 3. Choose Your Download Strategy
+Get your free API key at: https://materialsproject.org/api
 
-#### 🎯 **New to MP? Want to explore?**
-```powershell
-python demo_downloads.py
-```
-Interactive demo showing available data and download strategies.
+### 3. Run the Pipeline
 
-#### 🚀 **Most Researchers (Recommended)**
-```powershell
-python download_priority_data.py
-```
-Downloads core datasets (materials summary, electronic structure, etc.)
+#### Regression (Bandgap Prediction)
 
-#### 🎯 **Specific Materials Study**
-```powershell
-python download_data.py
-```
-Downloads focused datasets (e.g., all perovskites)
-
-#### 🌐 **Complete Database**
-```powershell
-python download_all_data.py
-```
-Downloads everything available from Materials Project
-
-## 📚 Documentation
-
-### � **START HERE: [DOWNLOAD_GUIDE.md](DOWNLOAD_GUIDE.md)**
-Complete guide to all download options with examples and best practices.
-
-### 📝 **[USAGE_GUIDE.md](USAGE_GUIDE.md)**
-Detailed examples for focused downloads and customization.
-
-## 📊 What You Get
-
-### Priority Downloads (Recommended)
-```
-materials_data/priority_datasets/
-├── materials_summary_20241011_143022.csv      # Core properties (100k+ materials)
-├── electronic_structure_dos_20241011_143045.csv  # Electronic data (50k+ materials)
-├── materials_thermo_20241011_143100.csv       # Thermodynamics (100k+ materials)
-├── materials_elasticity_20241011_143115.csv   # Mechanical properties (10k+ materials)
-└── priority_download_report_20241011_143200.json  # Complete statistics
+```bash
+python run_pipeline.py F10          # Train with 10 features
+python run_pipeline.py F10 F22      # Train with both feature sets
 ```
 
-### Complete Downloads
-```
-materials_data/complete_database/
-├── materials_summary/           # Core materials data
-├── materials_electronic_structure/  # Band structures, DOS
-├── materials_elasticity/        # Mechanical properties
-├── materials_dielectric/        # Optical properties
-├── materials_magnetism/         # Magnetic properties
-├── molecules_summary/           # Molecular data
-└── download_report_20241011_120000.json  # Complete report
+#### Classification (Bandgap Type Prediction)
+
+```bash
+python run_pipeline.py --task classification F10
 ```
 
-### Data Fields Available
-- **Basic Properties**: Material ID, formula, elements, crystal system
-- **Electronic**: Band gap, DOS, band structures, Fermi energy
-- **Thermodynamic**: Formation energy, stability, phase diagrams
-- **Structural**: Lattice parameters, atomic positions, space groups
-- **Mechanical**: Elastic constants, bulk/shear modulus
-- **Optical**: Dielectric constants, absorption spectra
-- **Magnetic**: Magnetic moments, ordering temperatures
+#### Skip SHAP Analysis (Faster Execution)
+
+```bash
+python run_pipeline.py --no-shap F10
+```
+
+### 4. View Results
+
+All outputs are automatically generated:
+
+- **Validation plots**: `validation/{F10,F22}/`
+- **Trained models**: `models/{F10,F22}/`
+- **Evaluation figures**: `figures/{F10,F22}/`
+- **SHAP analysis**: `figures/{F10,F22}/{model}/shap_*.png`
+- **Results summary**: `results/all_models_summary.json`
+- **Model comparison**: `results/model_comparison.png`
+
+---
+
+## 📁 Project Structure
+
+```
+perovskite_project/
+├── data/                       # Raw and processed datasets
+│   ├── raw/                    # Raw data from Materials Project
+│   └── processed/              # Featurized and cleaned data
+├── src/                        # Source code modules
+│   ├── data_io.py             # Data loading and preparation
+│   ├── featurize.py           # Feature engineering with Matminer
+│   ├── preprocess.py          # Data preprocessing and scaling
+│   ├── models.py              # Model training (regression/classification)
+│   ├── eval.py                # Evaluation and SHAP analysis
+│   └── utils.py               # Utility functions
+├── experiments/                # Experiment configurations
+│   ├── metadata.json          # System information
+│   ├── query_config.yaml      # Data query parameters
+│   └── system_info.json       # Pipeline run metadata
+├── models/                     # Saved model artifacts (.pkl files)
+├── results/                    # Predictions and metrics
+├── figures/                    # Visualization outputs
+├── paper/                      # Paper drafts and documentation
+│   ├── methods.md             # Methodology description
+│   ├── results.md             # Results and analysis
+│   └── limitations.md         # Known limitations
+├── run_pipeline.py            # Main pipeline script
+├── download_data.py           # Data acquisition script
+├── test_shap_classification.py # Example test script
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
+```
+
+---
+
+## 🔬 Methodology
+
+### Dataset
+
+- **5,776 double perovskites** (ABC₂D₆ formula family)  
+- Source: Materials Project next-gen API  
+- DFT-calculated bandgaps using VASP (GGA/GGA+U, r2SCAN functional)
+- Structure: Lattice parameters, space groups, density, volume
+- Class distribution: 80.7% Indirect, 19.3% Direct
+
+### Feature Engineering
+
+**293 features** generated using Matminer:
+
+- **ElementProperty** (magpie descriptors): 128 features
+- **Stoichiometry**: 22 features  
+- **ElementFraction**: 112 features  
+- **Structural**: Lattice parameters, derived ratios, packing fraction
+- **Compositional**: Electronegativity differences, valence electrons
+
+### Feature Selection
+
+- **F4 to F24**: Tested 11 feature subsets using RFE with cross-validation
+- **F22**: Best performance (R²=0.7620 CV), 22 most important features
+- **F10**: Simpler model (R²=0.7386 CV), good balance between accuracy and complexity
+
+### Models
+
+**Regression (Primary):**
+- LightGBM (best: R²=0.8836)  
+- XGBoost, Random Forest, CatBoost, MLP
+
+**Classification (Primary):**
+- XGBoost (Accuracy=0.8936)  
+- LightGBM (best: Accuracy=0.8971)  
+- Random Forest, CatBoost, MLP
+
+### Evaluation
+
+- **Train/Test Split**: 80/20 stratified split  
+- **Scaling**: RobustScaler (handles outliers)
+- **Metrics**: 
+  - Regression: MAE, RMSE, R²
+  - Classification: Accuracy, Precision, Recall, F1-Score, ROC-AUC
+- **Explainability**: SHAP values for feature importance
+
+---
+
+## 📖 Documentation
+
+- **[QUICK_START.md](QUICK_START.md)** - Detailed setup and usage guide  
+- **[paper/methods.md](paper/methods.md)** - Methodology documentation  
+- **[paper/results.md](paper/results.md)** - Results and analysis  
+- **[paper/limitations.md](paper/limitations.md)** - Known limitations and future work
+
+---
 
 ## 🛠️ Dependencies
 
-All required packages are installed in the virtual environment:
-- `mp-api` (v0.45.12) - Materials Project API client
-- `pandas` (v2.3.3) - Data manipulation and CSV export
-- `pymatgen` (v2025.10.7) - Materials analysis
-- `python-dotenv` (v1.1.1) - Environment variable management
+All required packages are in `requirements.txt`:
 
-## 🔧 Usage Examples
+- **mp-api** (≥0.41.0) - Materials Project API client  
+- **pandas**, **numpy** - Data manipulation  
+- **scikit-learn** - ML algorithms and preprocessing  
+- **lightgbm** (≥4.0.0) - Best performing model  
+- **xgboost**, **catboost** - Gradient boosting models  
+- **matplotlib**, **seaborn** - Visualization  
+- **shap** - Explainability analysis  
+- **matminer** (≥0.9.0) - Materials featurization  
+- **pymatgen** (≥2023.9.0) - Materials analysis
 
-### Test Your Configuration
-```powershell
-E:/Major_Project/perovskite/Scripts/python.exe test_config.py
+---
+
+## 📈 Usage Examples
+
+### Basic Usage
+
+```bash
+# Default: F10 regression with SHAP
+python run_pipeline.py
+
+# Multiple feature sets
+python run_pipeline.py F10 F22
+
+# Classification task
+python run_pipeline.py --task classification F10
+
+# Faster (skip SHAP)
+python run_pipeline.py --no-shap F22
 ```
 
-### Download Materials Data (Main Script)
-```powershell
-E:/Major_Project/perovskite/Scripts/python.exe download_data.py
+### Help
+
+```bash
+python run_pipeline.py --help
 ```
 
-This automatically downloads:
-- **Transition metal oxides** - Ti-O compounds
-- **Semiconductor materials** - Silicon-based semiconductors
-- **Large stable dataset** - 500+ stable materials
+---
 
-### Custom Material Search
-```python
-from download_data import EnhancedMaterialsProjectDownloader
+## 🎯 Key Findings
 
-# Initialize downloader
-downloader = EnhancedMaterialsProjectDownloader()
+1. **Feature Importance**: 
+   - Top features: Electronegativity statistics, atomic radii, GSbandgap descriptors
+   - SHAP analysis reveals complex feature interactions
 
-# Search for specific materials
-docs = downloader.search_materials(
-    elements=["Ti", "O"],              # Must contain these elements
-    crystal_system="tetragonal",       # Crystal system
-    band_gap_range=(1.0, 4.0),        # Band gap in eV
-    energy_above_hull_max=0.05,       # Stability (eV/atom above ground state)
-    theoretical=False,                 # Experimental structures only
-    nsites_range=(1, 50),              # Number of atoms in unit cell
-    limit=100                          # Maximum results
-)
+2. **Performance**:
+   - Best regression: F22 XGBoost (R²=0.8807, MAE=0.3454 eV)
+   - Best classification: F10 LightGBM (Accuracy=89.71%)
+   - Simpler F10 models nearly match F22 performance
 
-# Save to CSV
-df = downloader.save_data(docs, "my_materials")
+3. **Validation**:
+   - Error distribution centered near 0 eV
+   - Most predictions within ±0.5 eV of DFT values
+   - PV-relevant bandgap range (1.2-1.8 eV) well-represented
+
+---
+
+## 🔍 Future Work
+
+- **Hyperparameter Optimization**: Optuna/GridSearch for even better performance  
+- **Graph Neural Networks**: Structure-aware models (CGCNN, MEGNet)  
+- **Active Learning**: Iterative model improvement with targeted experiments  
+- **GW Corrections**: Train on GW-corrected bandgaps for higher accuracy  
+- **Candidate Generation**: Predict properties of hypothetical perovskites
+
+See [paper/limitations.md](paper/limitations.md) for detailed discussion.
+
+---
+
+## 📝 Citation
+
+If you use this code or methodology, please cite:
+
+```bibtex
+@software{perovskite_bandgap_prediction_2024,
+  author = {Aish Soni},
+  title = {Perovskite Bandgap Prediction using Machine Learning},
+  year = {2024},
+  url = {https://github.com/AishSoni/Silica-Perovskite-Energy-Band-Gap-Prediction}
+}
 ```
 
-## 🎯 Common Search Scenarios
+---
 
-**Photovoltaic Materials (Band gap 1-2 eV):**
-```python
-pv_docs = downloader.search_materials(
-    band_gap_range=(1.0, 2.0),
-    energy_above_hull_max=0.1,
-    theoretical=False,
-    limit=100
-)
-```
+## 📄 License
 
-**Battery Materials (Li-containing):**
-```python
-battery_docs = downloader.search_materials(
-    elements=["Li"],
-    energy_above_hull_max=0.1,
-    band_gap_range=(0.0, 0.5),  # Metallic to weakly semiconducting
-    limit=100
-)
-```
+MIT License - see [LICENSE](LICENSE) for details.
 
-**Magnetic Materials (Fe, Co, Ni):**
-```python
-magnetic_docs = downloader.search_materials(
-    elements=["Fe"],  # Iron-containing compounds
-    energy_above_hull_max=0.1,
-    limit=100
-)
-```
+---
 
-## 📄 Output Files
+## 🤝 Contributing
 
-The script generates three types of files in the `materials_data/` directory:
+Contributions are welcome! Please:
 
-### File Types
-- **`*.csv`** - 📊 Tabular data for spreadsheet analysis (Excel, pandas)
-- **`*.json`** - 🔧 Complete data including crystal structures  
-- **`*_summary.txt`** - 📈 Dataset statistics and metadata
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-### Example Output
-```
-materials_data/
-├── transition_metal_oxides.csv      # 50 Ti-O materials
-├── transition_metal_oxides.json     # Full structural data
-├── transition_metal_oxides_summary.txt  # Statistics
-├── semiconductors.csv               # 50 Si materials  
-├── semiconductors.json
-├── semiconductors_summary.txt
-├── stable_materials_large.csv       # 500 stable materials
-├── stable_materials_large.json
-└── stable_materials_large_summary.txt
-```
+---
 
-## 📊 Data Fields Included
+## 📧 Contact
 
-Each CSV file contains the following columns:
+**Aish Soni**  
+GitHub: [@AishSoni](https://github.com/AishSoni)
 
-### Core Properties
-- `material_id` - Materials Project ID (e.g., "mp-149")
-- `formula_pretty` - Chemical formula (e.g., "TiO₂")
-- `energy_per_atom` - Total energy per atom (eV)
-- `formation_energy_per_atom` - Formation energy (eV/atom)
-- `energy_above_hull` - Stability measure (eV/atom above ground state)
-- `band_gap` - Electronic band gap (eV)
-- `density` - Mass density (g/cm³)
-- `volume` - Unit cell volume (Å³)
-- `nsites` - Number of atoms in unit cell
+For questions or issues, please open an issue on GitHub.
 
-### Structural Properties
-- `crystal_system` - Crystal system (cubic, hexagonal, etc.)
-- `spacegroup_number` - International space group number
-- `spacegroup_symbol` - Space group symbol
-- `lattice_a`, `lattice_b`, `lattice_c` - Lattice parameters (Å)
-- `lattice_alpha`, `lattice_beta`, `lattice_gamma` - Lattice angles (°)
+---
 
-### Composition
-- `elements` - Chemical elements (comma-separated)
-- `num_elements` - Number of different elements
-- `theoretical` - Whether structure is theoretical or experimental
-
-## ⚡ Performance & Tips
-
-### Optimization for Large Downloads
-1. **Start Small** - Test with `limit=50` first
-2. **Use Stability Filter** - `energy_above_hull_max=0.1` removes unstable phases
-3. **Limit Elements** - Keep element lists under 8 elements to avoid API limits
-4. **Batch Downloads** - For very large datasets, download in smaller batches
-
-### Search Parameter Guidelines
-- **Elements**: Use 1-8 elements max (API character limit)
-- **Energy Above Hull**: 0.1 eV/atom for stable materials, 0.5 for metastable
-- **Band Gap Range**: (0.5, 3.0) for semiconductors, (0.0, 0.1) for metals
-- **Number of Sites**: (1, 100) for reasonable unit cell sizes
-
-## 🔍 Data Analysis Examples
-
-### Load and Analyze CSV Data
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
-
-# Load downloaded data
-df = pd.read_csv('materials_data/semiconductors.csv')
-
-# Basic statistics
-print(f"Total materials: {len(df)}")
-print(f"Average band gap: {df['band_gap'].mean():.2f} eV")
-print(f"Stable materials: {(df['energy_above_hull'] < 0.1).sum()}")
-
-# Plot band gap vs stability
-plt.figure(figsize=(10, 6))
-plt.scatter(df['energy_above_hull'], df['band_gap'], alpha=0.6)
-plt.xlabel('Energy Above Hull (eV/atom)')
-plt.ylabel('Band Gap (eV)')
-plt.title('Material Stability vs Band Gap')
-plt.show()
-```
-
-### Filter for Specific Properties
-```python
-# Find stable semiconductors
-stable_semiconductors = df[
-    (df['energy_above_hull'] < 0.1) & 
-    (df['band_gap'] > 0.5) & 
-    (df['band_gap'] < 3.0)
-]
-
-print(f"Found {len(stable_semiconductors)} stable semiconductors")
-print(stable_semiconductors[['material_id', 'formula_pretty', 'band_gap']])
-```
-
-## 🛠️ Troubleshooting
-
-**❌ Error: "Invalid API key"**
-- ✅ Check your API key is exactly 32 characters
-- ✅ Ensure no extra spaces in the `.env` file
-- ✅ Verify your Materials Project account is active
-
-**❌ Error: "Too many requests"**
-- ✅ Add delays between large queries
-- ✅ Reduce `limit` parameter
-- ✅ Contact MP team for heavy usage approval
-
-**❌ Error: "No materials found"**
-- ✅ Relax search criteria (increase `energy_above_hull_max`)
-- ✅ Remove some element constraints
-- ✅ Check if combination of parameters is too restrictive
-
-**❌ Error: "elements - String should have at most 60 characters"**
-- ✅ Reduce number of elements in search (max ~8 elements)
-- ✅ Use separate searches for different element groups
-
-## 📚 Additional Resources
-
-- **API Documentation**: [api.materialsproject.org/docs](https://api.materialsproject.org/docs)
-- **Materials Project Website**: [materialsproject.org](https://next-gen.materialsproject.org/)
-- **Usage Guide**: See `USAGE_GUIDE.md` for detailed examples
-- **Support Forum**: [matsci.org/materials-project](https://matsci.org/materials-project)
-
-## ✅ Validation Status
-
-- ✅ **API Connection**: Successfully tested with valid API key
-- ✅ **CSV Export**: Working correctly with proper column headers
-- ✅ **Data Integrity**: All material properties correctly extracted
-- ✅ **Large Datasets**: Efficiently handles 500+ materials
-- ✅ **Error Handling**: Robust validation and error messages
-- ✅ **Documentation**: Complete API field mapping verified
-
-**Script Status**: 🟢 **FULLY FUNCTIONAL** - Ready for production use!
+**Made with ❤️ for materials science research**

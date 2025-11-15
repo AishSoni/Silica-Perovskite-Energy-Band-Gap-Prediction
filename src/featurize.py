@@ -1,6 +1,7 @@
 """
 Feature engineering module for perovskite materials.
-Generates ~300 features using matminer and pymatgen.
+UPDATED: Generates ~120-160 features using stable matminer featurizers.
+Avoids overfitting with limited sample sizes (~500-6000 materials).
 """
 
 import pandas as pd
@@ -9,8 +10,18 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 import warnings
 
-from pymatgen.core import Composition, Element
-from matminer.featurizers.composition import ElementProperty, Meredig, Stoichiometry
+from pymatgen.core import Composition, Element, Structure
+from matminer.featurizers.composition import (
+    ElementProperty, 
+    Stoichiometry, 
+    ValenceOrbital,
+    ElementFraction
+)
+from matminer.featurizers.structure import (
+    SiteStatsFingerprint,
+    DensityFeatures,
+    GlobalSymmetryFeatures
+)
 from matminer.featurizers.base import MultipleFeaturizer
 
 warnings.filterwarnings('ignore')
@@ -18,35 +29,70 @@ warnings.filterwarnings('ignore')
 
 class PerovskiteFeaturizer:
     """
-    Featurizer for perovskite materials using composition-based descriptors.
-    Aims to generate ~300 features similar to the original paper.
+    Featurizer for perovskite materials using composition and structure descriptors.
+    Targets ~120-160 features to avoid overfitting with limited data.
     """
     
-    def __init__(self):
-        """Initialize featurizers."""
-        self.featurizers = self._setup_featurizers()
+    def __init__(self, use_structure_features: bool = True):
+        """
+        Initialize featurizers.
+        
+        Args:
+            use_structure_features: Whether to include structure-based features
+        """
+        self.use_structure_features = use_structure_features
+        self.composition_featurizers = self._setup_composition_featurizers()
+        if use_structure_features:
+            self.structure_featurizers = self._setup_structure_featurizers()
         self.feature_list = []
     
-    def _setup_featurizers(self) -> MultipleFeaturizer:
+    def _setup_composition_featurizers(self) -> MultipleFeaturizer:
         """
-        Set up matminer featurizers for composition-based features.
+        Set up matminer composition featurizers for stable, low-variance features.
         
         Returns:
-            MultipleFeaturizer object
+            MultipleFeaturizer object with composition featurizers
         """
-        print("Setting up featurizers...")
+        print("Setting up composition featurizers...")
         
-        # Use multiple composition featurizers to get ~300 features
-        # NOTE: Stoichiometry featurizer can cause row duplication issues
-        # Using only ElementProperty for stability
+        # Use stable composition featurizers (avoid SOAP, MBTR which need large datasets)
         featurizers = [
-            # Magpie elemental property statistics (132 features)
+            # Magpie elemental property statistics (~132 features)
             ElementProperty.from_preset("magpie"),
+            
+            # Element fraction features (~number of unique elements)
+            ElementFraction(),
+            
+            # Valence orbital features (~10 features)
+            ValenceOrbital(),
         ]
         
         multi_featurizer = MultipleFeaturizer(featurizers)
-        print("Featurizers initialized")
-
+        print(f"  Added {len(featurizers)} composition featurizers")
+        return multi_featurizer
+    
+    def _setup_structure_featurizers(self) -> MultipleFeaturizer:
+        """
+        Set up matminer structure featurizers (requires structure objects).
+        
+        Returns:
+            MultipleFeaturizer object with structure featurizers
+        """
+        print("Setting up structure featurizers...")
+        
+        featurizers = [
+            # Site statistics fingerprint - local coordination
+            SiteStatsFingerprint.from_preset("CoordinationNumber_ward-prb-2017"),
+            
+            # Density-based features
+            DensityFeatures(),
+            
+            # Global symmetry features
+            GlobalSymmetryFeatures(),
+        ]
+        
+        multi_featurizer = MultipleFeaturizer(featurizers)
+        print(f"  Added {len(featurizers)} structure featurizers")
         return multi_featurizer
     
     def add_basic_composition_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -167,10 +213,10 @@ class PerovskiteFeaturizer:
     
     def add_matminer_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Add matminer featurizer features.
+        Add matminer composition and structure features.
         
         Args:
-            df: DataFrame with composition column
+            df: DataFrame with composition column (and optionally structure column)
         
         Returns:
             DataFrame with matminer features added
@@ -181,6 +227,7 @@ class PerovskiteFeaturizer:
         
         # Ensure composition column exists
         if 'composition' not in df.columns:
+            print("  Creating composition objects...")
             df['composition'] = df['formula_pretty'].apply(
                 lambda x: Composition(x) if pd.notna(x) else None
             )
@@ -193,28 +240,71 @@ class PerovskiteFeaturizer:
         
         df_valid = df[valid_mask].copy()
         
-        # Featurize using matminer
+        # Apply composition featurizers
         try:
-            df_valid = self.featurizers.featurize_dataframe(
+            print("  Applying composition featurizers...")
+            df_valid = self.composition_featurizers.featurize_dataframe(
                 df_valid, 
                 col_id='composition',
                 ignore_errors=True,
-                multiindex=False  # Prevent row duplication
+                multiindex=False
             )
-            print("Matminer features computed successfully")
+            print("  Composition features computed successfully")
             
-            # Drop exact duplicates that may have been created
-            initial_len = len(df_valid)
-            df_valid = df_valid.drop_duplicates(subset=['formula_pretty'])
-            if len(df_valid) < initial_len:
-                print(f"  Warning: Removed {initial_len - len(df_valid)} duplicate rows created during featurization")
-                
         except Exception as e:
-            print(f"⚠ Warning: Some features failed to compute: {e}")
+            print(f"  Warning: Some composition features failed: {e}")
+        
+        # Apply structure featurizers if available and enabled
+        if self.use_structure_features and 'structure' in df_valid.columns:
+            # Check if structure column has valid Structure objects
+            has_structure = df_valid['structure'].notna().sum()
+            print(f"  Found {has_structure} materials with structure data")
+            
+            if has_structure > 0:
+                try:
+                    print("  Applying structure featurizers (this may take longer)...")
+                    # Only featurize rows with valid structures
+                    struct_mask = df_valid['structure'].notna()
+                    df_with_struct = df_valid[struct_mask].copy()
+                    
+                    df_with_struct = self.structure_featurizers.featurize_dataframe(
+                        df_with_struct,
+                        col_id='structure',
+                        ignore_errors=True,
+                        multiindex=False
+                    )
+                    
+                    # Merge back
+                    struct_feature_cols = [c for c in df_with_struct.columns if c not in df_valid.columns]
+                    df_valid = df_valid.merge(
+                        df_with_struct[['material_id'] + struct_feature_cols] if 'material_id' in df_with_struct.columns 
+                        else df_with_struct[['formula_pretty'] + struct_feature_cols],
+                        on='material_id' if 'material_id' in df_valid.columns else 'formula_pretty',
+                        how='left'
+                    )
+                    
+                    print(f"  Structure features computed successfully ({len(struct_feature_cols)} features)")
+                    
+                except Exception as e:
+                    print(f"  Warning: Structure features failed: {e}")
+            else:
+                print("  Skipping structure features (no structures available)")
+        
+        # Remove duplicates that may have been created
+        initial_len = len(df_valid)
+        df_valid = df_valid.drop_duplicates(subset=['formula_pretty'] if 'formula_pretty' in df_valid.columns else None)
+        if len(df_valid) < initial_len:
+            print(f"  Removed {initial_len - len(df_valid)} duplicate rows")
         
         # Merge back with original dataframe
         feature_cols = [col for col in df_valid.columns if col not in df.columns]
-        df = df.merge(df_valid[['formula_pretty'] + feature_cols], on='formula_pretty', how='left')
+        df = df.merge(
+            df_valid[['formula_pretty'] + feature_cols] if 'formula_pretty' in df_valid.columns else df_valid,
+            on='formula_pretty' if 'formula_pretty' in df_valid.columns else None,
+            how='left'
+        )
+        
+        print(f"  Total new features added: {len(feature_cols)}")
         
         return df
     
@@ -377,17 +467,19 @@ class PerovskiteFeaturizer:
 
 
 def featurize_data(
-    input_path: str = "data/raw/perovskites_raw.csv",
+    input_path: str = "data/raw/double_perovskites_raw.csv",  # UPDATED to use new data
     output_path: str = "data/processed/perovskites_features.csv",
-    feature_list_path: str = "data/processed/features_list.csv"
+    feature_list_path: str = "data/processed/features_list.csv",
+    use_structure_features: bool = False  # Set to True if structure column has valid data
 ) -> pd.DataFrame:
     """
-    Main function to featurize perovskite data.
+    Main function to featurize double perovskite data.
     
     Args:
-        input_path: Path to raw data CSV
+        input_path: Path to raw data CSV (default: double_perovskites_raw.csv)
         output_path: Path to save featurized data
         feature_list_path: Path to save feature list
+        use_structure_features: Whether to compute structure-based features (slower)
     
     Returns:
         Featurized DataFrame
@@ -397,8 +489,8 @@ def featurize_data(
     df = pd.read_csv(input_path)
     print(f"Loaded {len(df)} materials")
     
-    # Initialize featurizer
-    featurizer = PerovskiteFeaturizer()
+    # Initialize featurizer with structure feature option
+    featurizer = PerovskiteFeaturizer(use_structure_features=use_structure_features)
     
     # Featurize
     df_features = featurizer.featurize(df, include_matminer=True)
@@ -417,14 +509,17 @@ def featurize_data(
 
 
 if __name__ == "__main__":
-    # Test featurization
-    print("Testing featurization module...")
+    # Test featurization on new double perovskite data
+    print("Testing featurization module on double perovskites...")
     
     try:
-        df = featurize_data()
+        df = featurize_data(
+            input_path="data/raw/double_perovskites_raw.csv",
+            use_structure_features=False  # Set to True if structures are available
+        )
         print("\nFeaturization test successful")
-        print(f"\nSample features:")
-        print(df.head())
+        print(f"\nDataset shape: {df.shape}")
+        print(f"\nSample columns: {list(df.columns)[:20]}")
     except Exception as e:
         print(f"\nError: {e}")
         import traceback

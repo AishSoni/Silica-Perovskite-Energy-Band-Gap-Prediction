@@ -2,6 +2,9 @@
 Evaluation module with metrics, visualizations, and SHAP analysis.
 """
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid tkinter issues
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,6 +77,14 @@ class ModelEvaluator:
         pct_over_25 = (pct_error > 25).sum() / len(pct_error) * 100
         
         metrics = {
+            'mae': mae,
+            'rmse': rmse,
+            'mse': mse,
+            'r2': r2,
+            'median_ae': median_ae,
+            'max_error': max_error,
+            'pct_error_over_25': pct_over_25,
+            # Keep uppercase for compatibility
             'MAE': mae,
             'RMSE': rmse,
             'MSE': mse,
@@ -216,6 +227,54 @@ class ModelEvaluator:
         
         print(f"✓ Error histogram saved to {output_path}")
     
+    def error_vs_bandgap(
+        self,
+        y_true,
+        y_pred,
+        title: str = "Prediction Error vs Bandgap",
+        filename: str = "error_vs_bandgap.png"
+    ):
+        """
+        Plot prediction error vs true bandgap value.
+        
+        Args:
+            y_true: True bandgap values
+            y_pred: Predicted bandgap values
+            title: Plot title
+            filename: Output filename
+        """
+        errors = np.abs(y_pred - y_true)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Scatter plot
+        ax.scatter(y_true, errors, s=20, alpha=0.5, edgecolors='k', linewidths=0.5)
+        
+        # Add horizontal line for MAE
+        mae = errors.mean()
+        ax.axhline(mae, color='red', linestyle='--', linewidth=2, label=f'MAE = {mae:.3f} eV')
+        
+        ax.set_xlabel('True Bandgap (eV)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Absolute Error (eV)', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Add percentage error information
+        pct_below_05 = (errors < 0.5).sum() / len(errors) * 100
+        pct_below_10 = (errors < 1.0).sum() / len(errors) * 100
+        text = f"% error < 0.5 eV: {pct_below_05:.1f}%\n% error < 1.0 eV: {pct_below_10:.1f}%"
+        ax.text(0.95, 0.95, text, transform=ax.transAxes,
+               verticalalignment='top', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        output_path = self.output_dir / filename
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Error vs bandgap plot saved to {output_path}")
+    
     def confusion_matrix_plot(
         self,
         y_true,
@@ -268,14 +327,22 @@ class ModelEvaluator:
         
         Args:
             y_true: True labels
-            y_pred_proba: Predicted probabilities
+            y_pred_proba: Predicted probabilities (can be 1D or 2D)
             title: Plot title
             filename: Output filename
         """
         # Binary classification
         if len(np.unique(y_true)) == 2:
-            fpr, tpr, _ = roc_curve(y_true, y_pred_proba[:, 1])
-            roc_auc = roc_auc_score(y_true, y_pred_proba[:, 1])
+            # Handle both 1D and 2D probability arrays
+            if len(y_pred_proba.shape) == 1:
+                # 1D array - already probabilities for positive class
+                proba_positive = y_pred_proba
+            else:
+                # 2D array - extract probabilities for positive class (column 1)
+                proba_positive = y_pred_proba[:, 1]
+            
+            fpr, tpr, _ = roc_curve(y_true, proba_positive)
+            roc_auc = roc_auc_score(y_true, proba_positive)
             
             fig, ax = plt.subplots(figsize=(8, 6))
             
@@ -318,9 +385,14 @@ class ModelEvaluator:
             return
         
         importances = model.feature_importances_
+        
+        # Adjust top_n if we have fewer features
+        n_features = len(feature_names)
+        top_n = min(top_n, n_features)
+        
         indices = np.argsort(importances)[-top_n:][::-1]
         
-        fig, ax = plt.subplots(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(10, max(6, top_n * 0.4)))
         
         y_pos = np.arange(top_n)
         ax.barh(y_pos, importances[indices], align='center')
@@ -492,6 +564,105 @@ class ModelEvaluator:
 
 
 def evaluate_model(
+    model,
+    X_test,
+    y_test,
+    task: str = 'regression',
+    output_dir: str = 'figures',
+    model_name: str = 'model',
+    feature_names: Optional[List[str]] = None
+) -> Dict:
+    """
+    Evaluate a trained model.
+    
+    Args:
+        model: Trained model object
+        X_test: Test features (DataFrame or array)
+        y_test: Test target (Series or array)
+        task: 'regression' or 'classification'
+        output_dir: Directory to save figures
+        model_name: Name of the model for plot titles
+        feature_names: List of feature names
+    
+    Returns:
+        Dictionary with evaluation metrics
+    """
+    print(f"\nEvaluating {model_name}...")
+    
+    # Create output directory
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize evaluator
+    evaluator = ModelEvaluator(output_dir=str(output_dir))
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Compute metrics first (before any plotting that might fail)
+    if task == 'regression':
+        metrics = evaluator.regression_metrics(y_test, y_pred)
+    else:  # classification
+        metrics = evaluator.classification_metrics(y_test, y_pred)
+    
+    # Now create plots
+    if task == 'regression':
+        # Create plots
+        evaluator.parity_plot(
+            y_test, y_pred,
+            title=f"{model_name} - Parity Plot",
+            filename="parity_plot.png"
+        )
+        
+        evaluator.error_histogram(
+            y_test, y_pred,
+            title=f"{model_name} - Error Distribution",
+            filename="error_histogram.png"
+        )
+        
+        evaluator.error_vs_bandgap(
+            y_test, y_pred,
+            title=f"{model_name} - Error vs Bandgap",
+            filename="error_vs_bandgap.png"
+        )
+        
+        # Feature importance if available
+        if feature_names and hasattr(model, 'feature_importances_'):
+            try:
+                evaluator.feature_importance_plot(
+                    model,
+                    feature_names,
+                    title=f"{model_name} - Feature Importance",
+                    filename="feature_importance.png"
+                )
+            except Exception as e:
+                print(f"  ⚠ Could not generate feature importance plot: {e}")
+        
+    else:  # classification
+        metrics = evaluator.classification_metrics(y_test, y_pred)
+        
+        # Create plots
+        evaluator.confusion_matrix_plot(
+            y_test, y_pred,
+            title=f"{model_name} - Confusion Matrix",
+            filename="confusion_matrix.png"
+        )
+        
+        if hasattr(model, 'predict_proba'):
+            y_pred_proba = model.predict_proba(X_test)
+            if y_pred_proba.shape[1] == 2:  # Binary classification
+                evaluator.roc_curve_plot(
+                    y_test, y_pred_proba[:, 1],
+                    title=f"{model_name} - ROC Curve",
+                    filename="roc_curve.png"
+                )
+    
+    print(f"✓ Evaluation complete. Figures saved to {output_dir}")
+    
+    return metrics
+
+
+def evaluate_model_from_paths(
     model_path: str,
     X_test_path: str,
     y_test_path: str,
@@ -500,7 +671,65 @@ def evaluate_model(
     feature_names_path: Optional[str] = None
 ) -> Dict:
     """
-    Main function to evaluate a trained model.
+    Main function to evaluate a trained model from saved paths.
+    
+    Args:
+        model_path: Path to saved model
+        X_test_path: Path to test features
+        y_test_path: Path to test target
+        task: 'regression' or 'classification'
+        output_dir: Directory to save figures
+        feature_names_path: Path to feature names file
+    
+    Returns:
+        Dictionary with evaluation metrics
+    """
+    print("\n" + "="*80)
+    print(f"MODEL EVALUATION - {task.upper()}")
+    print("="*80 + "\n")
+    
+    # Load model and data
+    print(f"Loading model from {model_path}...")
+    model = joblib.load(model_path)
+    
+    print(f"Loading test data...")
+    X_test = joblib.load(X_test_path)
+    y_test = joblib.load(y_test_path)
+    
+    print(f"✓ Test set: {X_test.shape}")
+    
+    # Load feature names
+    feature_names = None
+    if feature_names_path:
+        with open(feature_names_path, 'r') as f:
+            feature_names = [line.strip() for line in f]
+    
+    # Get model name from path
+    model_name = Path(model_path).stem
+    
+    # Call the main evaluate_model function
+    return evaluate_model(
+        model=model,
+        X_test=X_test,
+        y_test=y_test,
+        task=task,
+        output_dir=output_dir,
+        model_name=model_name,
+        feature_names=feature_names
+    )
+
+
+# Keep old function for backwards compatibility
+def evaluate_model_old(
+    model_path: str,
+    X_test_path: str,
+    y_test_path: str,
+    task: str = 'regression',
+    output_dir: str = 'figures',
+    feature_names_path: Optional[str] = None
+) -> Dict:
+    """
+    Legacy function - use evaluate_model_from_paths instead.
     
     Args:
         model_path: Path to saved model

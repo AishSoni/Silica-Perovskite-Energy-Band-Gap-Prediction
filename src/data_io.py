@@ -264,6 +264,153 @@ def extract_elements_from_formula(formula: str) -> List[str]:
         return []
 
 
+def load_double_perovskite_data(
+    raw_path: str = "data/raw/double_perovskites_raw.csv",
+    features_path: str = "data/processed/perovskites_features.csv"
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Load double perovskite raw and featurized data.
+    
+    Args:
+        raw_path: Path to raw double perovskite CSV
+        features_path: Path to featurized data CSV
+    
+    Returns:
+        Tuple of (raw_df, features_df)
+    """
+    raw_path = Path(raw_path)
+    features_path = Path(features_path)
+    
+    if not raw_path.exists():
+        raise FileNotFoundError(f"Raw data not found: {raw_path}")
+    if not features_path.exists():
+        raise FileNotFoundError(f"Featurized data not found: {features_path}")
+    
+    print(f"Loading double perovskite data...")
+    print(f"  Raw: {raw_path}")
+    print(f"  Features: {features_path}")
+    
+    raw_df = pd.read_csv(raw_path)
+    features_df = pd.read_csv(features_path)
+    
+    print(f"✓ Raw data: {raw_df.shape[0]} materials, {raw_df.shape[1]} columns")
+    print(f"✓ Feature data: {features_df.shape[0]} materials, {features_df.shape[1]} columns")
+    
+    return raw_df, features_df
+
+
+def load_feature_subset(subset_name: str, features_dir: str = "results/feature_sets") -> List[str]:
+    """
+    Load a specific feature subset (e.g., F10, F22).
+    
+    Args:
+        subset_name: Name of subset (e.g., 'F10', 'F22')
+        features_dir: Directory containing feature subset files
+    
+    Returns:
+        List of feature names
+    """
+    features_dir = Path(features_dir)
+    subset_path = features_dir / f"feature_subset_{subset_name}.txt"
+    
+    if not subset_path.exists():
+        raise FileNotFoundError(f"Feature subset not found: {subset_path}")
+    
+    print(f"Loading feature subset {subset_name} from {subset_path}...")
+    
+    features = []
+    with open(subset_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and not line.startswith('CV') and not line.startswith('Selected'):
+                # Extract feature name (remove leading "- " if present)
+                if line.startswith('- '):
+                    line = line[2:]
+                if line:
+                    features.append(line)
+    
+    print(f"✓ Loaded {len(features)} features for {subset_name}")
+    return features
+
+
+def prepare_training_data(
+    subset_name: str = "F10",
+    features_path: str = "data/processed/perovskites_features.csv",
+    features_dir: str = "results/feature_sets",
+    task: str = 'regression'
+) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
+    """
+    Prepare training data with specific feature subset.
+    
+    Args:
+        subset_name: Feature subset to use (e.g., 'F10', 'F22')
+        features_path: Path to full featurized data
+        features_dir: Directory with feature subset definitions
+        task: 'regression' (bandgap) or 'classification' (gap type)
+    
+    Returns:
+        Tuple of (X, y, feature_names) where:
+        - X: Feature DataFrame
+        - y: Target Series (band_gap for regression, is_gap_direct for classification)
+        - feature_names: List of feature names
+    """
+    print("\n" + "="*80)
+    print(f"PREPARING TRAINING DATA - Feature Subset: {subset_name}, Task: {task.upper()}")
+    print("="*80 + "\n")
+    
+    # Load full featurized data
+    features_path = Path(features_path)
+    if not features_path.exists():
+        raise FileNotFoundError(f"Featurized data not found: {features_path}")
+    
+    df = pd.read_csv(features_path)
+    print(f"Loaded full dataset: {df.shape}")
+    
+    # Load specific feature subset
+    feature_names = load_feature_subset(subset_name, features_dir)
+    
+    # Verify all features exist
+    missing_features = [f for f in feature_names if f not in df.columns]
+    if missing_features:
+        raise ValueError(f"Missing features in dataset: {missing_features}")
+    
+    # Extract features and target
+    X = df[feature_names].copy()
+    
+    # Select target based on task
+    if task == 'regression':
+        target_col = 'band_gap'
+        y = df[target_col].copy()
+    else:  # classification
+        target_col = 'is_gap_direct'
+        if target_col not in df.columns:
+            raise ValueError(f"Classification target '{target_col}' not found in dataset. Available columns: {df.columns.tolist()}")
+        y = df[target_col].copy()
+    
+    # Remove rows with missing target
+    valid_mask = y.notna()
+    X = X[valid_mask]
+    y = y[valid_mask]
+    
+    print(f"\nFinal dataset:")
+    print(f"  Samples: {len(X)}")
+    print(f"  Features: {len(feature_names)}")
+    
+    if task == 'regression':
+        print(f"  Target (band_gap) range: {y.min():.3f} - {y.max():.3f} eV")
+    else:  # classification
+        print(f"  Target (is_gap_direct) distribution:")
+        value_counts = y.value_counts()
+        for val, count in value_counts.items():
+            label = "Direct" if val else "Indirect"
+            pct = count / len(y) * 100
+            print(f"    {label}: {count} ({pct:.1f}%)")
+    
+    print(f"  Missing values in X: {X.isnull().sum().sum()}")
+    
+    return X, y, feature_names
+
+
 def load_and_prepare_data(
     data_dir: str = "materials_data",
     output_dir: str = "data/raw"
@@ -323,9 +470,33 @@ if __name__ == "__main__":
     print("Testing data_io module...")
     
     try:
-        df, metadata = load_and_prepare_data()
-        print("\n✓ Data loading test successful")
-        print(f"\nFirst few rows:")
-        print(df.head())
+        # Test loading double perovskite data
+        print("\n1. Testing double perovskite data loading...")
+        raw_df, features_df = load_double_perovskite_data()
+        print(f"✓ Successfully loaded {len(raw_df)} materials")
+        
+        # Test loading feature subsets
+        print("\n2. Testing feature subset loading...")
+        f10_features = load_feature_subset("F10")
+        print(f"✓ F10 features: {f10_features}")
+        
+        f22_features = load_feature_subset("F22")
+        print(f"✓ F22 features: {f22_features}")
+        
+        # Test preparing training data
+        print("\n3. Testing training data preparation...")
+        X_f10, y_f10, features_f10 = prepare_training_data("F10")
+        print(f"✓ F10 data prepared: X shape = {X_f10.shape}, y shape = {y_f10.shape}")
+        
+        X_f22, y_f22, features_f22 = prepare_training_data("F22")
+        print(f"✓ F22 data prepared: X shape = {X_f22.shape}, y shape = {y_f22.shape}")
+        
+        print("\n" + "="*80)
+        print("✓ ALL TESTS PASSED")
+        print("="*80)
+        
     except Exception as e:
         print(f"\n✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
+

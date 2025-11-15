@@ -1,0 +1,10 @@
+# F6 Feature Subset (6 features)
+# CV R² Score: 0.7045
+# Created for 5,776 samples
+
+formation_energy_per_atom
+MagpieData avg_dev NUnfilled
+MagpieData mean SpaceGroupNumber
+MagpieData avg_dev Column
+MagpieData maximum MeltingT
+MagpieData mean Column

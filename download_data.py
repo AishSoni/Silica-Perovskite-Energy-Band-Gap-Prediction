@@ -446,6 +446,7 @@ class EnhancedMaterialsProjectDownloader:
                 row['formation_energy_per_atom'] = get_val('formation_energy_per_atom')
                 row['energy_above_hull'] = get_val('energy_above_hull')
                 row['band_gap'] = get_val('band_gap')
+                row['is_gap_direct'] = get_val('is_gap_direct')
                 row['density'] = get_val('density')
                 row['volume'] = get_val('volume')
                 
@@ -660,6 +661,7 @@ class EnhancedMaterialsProjectDownloader:
             fields = [
                 "material_id",
                 "formula_pretty",
+                "formula_anonymous",  # CRITICAL: needed for filtering double perovskites
                 "elements",
                 "nelements", 
                 "structure",  # This includes lattice information
@@ -691,96 +693,137 @@ class EnhancedMaterialsProjectDownloader:
         
         all_perovskite_materials = []
         
-        # Strategy: Search for materials with known Perovskite compositions
-        # Common Perovskite formulas and patterns
-        perovskite_searches = [
-            # Classic oxide Perovskites
-            {'formula': '*TiO3'},
-            {'formula': '*ZrO3'}, 
-            {'formula': '*SnO3'},
-            {'formula': '*PbO3'},
-            {'formula': '*MnO3'},
-            {'formula': '*FeO3'},
-            {'formula': '*CoO3'},
-            {'formula': '*NiO3'},
-            {'formula': '*CrO3'},
-            {'formula': '*VO3'},
-            
-            # Specific well-known Perovskites
-            {'formula': 'BaTiO3'},
-            {'formula': 'SrTiO3'},
-            {'formula': 'CaTiO3'},
-            {'formula': 'PbTiO3'},
-            {'formula': 'LaFeO3'},
-            {'formula': 'LaMnO3'},
-            {'formula': 'LaCoO3'},
-            {'formula': 'LaNiO3'},
-            {'formula': 'BiFeO3'},
-            
-            # Halide Perovskites
-            {'formula': '*PbI3'},
-            {'formula': '*PbBr3'},
-            {'formula': '*PbCl3'},
-            {'formula': '*SnI3'},
-            {'formula': '*GeI3'},
-        ]
+        # FIXED: Strategy for DOUBLE PEROVSKITES (ABC2D6 family)
+        # This is the correct formula family from the original paper
         
-        print("Searching through multiple Perovskite composition patterns...")
+        # Define element groups for double perovskites
+        possible_A_site = ["Cs", "Rb", "K", "Na", "Tl", "Ba", "Sr", "Ca"]  # A-site cations
+        possible_B_site = ["Ag", "Bi", "Sb", "In", "Ga", "Cu", "Fe", "Mn", "Co", "Sn", "Pb", "Au", "Tl"]  # B-site
+        possible_X_site = ["Cl", "Br", "I", "F", "O"]  # Anions (halogens + oxygen)
+        
+        # Combine all elements for search
+        all_elements = list(set(possible_A_site + possible_B_site + possible_X_site))
+        
+        print("Searching for DOUBLE PEROVSKITES (ABC2D6 family) from Materials Project...")
+        print(f"Element groups:")
+        print(f"  A-site: {possible_A_site}")
+        print(f"  B-site: {possible_B_site}")
+        print(f"  X-site: {possible_X_site}")
+        print()
         
         try:
-            # Search using various strategies to capture all Perovskites
-            for i, search_params in enumerate(perovskite_searches):
-                try:
-                    print(f"Search {i+1}/{len(perovskite_searches)}: {search_params}")
-                    
-                    # Build search arguments - only include fields if specified
-                    search_args = search_params.copy()
-                    if fields is not None:
-                        search_args['fields'] = fields
-                    
-                    docs = self.mpr.materials.summary.search(**search_args)
-                    
-                    if docs:
-                        print(f"  Found {len(docs)} materials")
-                        all_perovskite_materials.extend(docs)
+            # Strategy: Download broad search and filter by formula_anonymous afterward
+            # The MP API .search() doesn't support formula_anonymous directly
+            print("Step 1: Downloading materials with relevant elements and site counts...")
+            print("(This may take 2-5 minutes for ~100k materials)")
+            
+            # Build search arguments - more targeted to reduce download
+            search_args = {
+                'num_elements': (3, 5),  # Double perovskites have 3-5 elements  
+                'num_sites': (8, 20),    # ABC2D6 typically has 9-15 sites (tighter range)
+                'energy_above_hull': (None, 0.5),  # Include metastable
+            }
+            if fields is not None:
+                search_args['fields'] = fields
+            
+            docs = self.mpr.materials.summary.search(**search_args)
+            
+            print(f"  Downloaded {len(docs)} candidate materials")
+            
+            if docs:
+                print("Step 2: Filtering for double perovskite formula patterns...")
+                print("  Target patterns: ABC2D6, A2BC2D6, A2B2C6, ABCD6")
+                
+                # Now filter by formula_anonymous
+                for doc in docs:
+                    formula_anon = None
+                    if isinstance(doc, dict):
+                        formula_anon = doc.get('formula_anonymous', '')
                     else:
-                        print(f"  No materials found")
-                        
-                except Exception as e:
-                    print(f"  Warning: Search failed: {e}")
-                    continue
+                        formula_anon = getattr(doc, 'formula_anonymous', '')
+                    
+                    # Check if it matches double perovskite patterns
+                    if formula_anon in ['ABC2D6', 'A2BC2D6', 'A2B2C6', 'A2BB\'C6', 'ABCD6']:
+                        all_perovskite_materials.append(doc)
+                
+                print(f"  Filtered to {len(all_perovskite_materials)} double perovskite materials")
             
-            # Additional broad search for potential Perovskites
-            print("\nPerforming broad search for additional Perovskite structures...")
+            # Additional search for double perovskites with specific element combinations
+            # This helps capture more materials
+            print("\nStep 3: Additional targeted searches for double perovskites...")
             
-            # Search for materials with cubic crystal system and common Perovskite elements
+            # Search 3a: Halide perovskites (common in solar cells)
             try:
-                # Build search arguments - only include fields if specified
-                broad_search_args = {
-                    'crystal_system': "cubic",
-                    'elements': ["O"],  # Most Perovskites contain oxygen
-                    'energy_above_hull': (None, 0.2),  # Include slightly metastable phases
+                print("  3a. Halide double perovskites...")
+                halide_search_args = {
+                    'elements': possible_X_site[:4],  # Cl, Br, I, F (not O for this search)
+                    'num_elements': (3, 5),
+                    'num_sites': (8, 20),
+                    'energy_above_hull': (None, 0.5),
                 }
                 if fields is not None:
-                    broad_search_args['fields'] = fields
+                    halide_search_args['fields'] = fields
                 
-                broad_docs = self.mpr.materials.summary.search(**broad_search_args)
+                halide_docs = self.mpr.materials.summary.search(**halide_search_args)
                 
-                print(f"Broad cubic oxide search found {len(broad_docs)} materials")
+                print(f"      Downloaded {len(halide_docs)} halide materials")
                 
-                # Filter for Perovskite-like compositions
-                perovskite_candidates = []
-                for doc in broad_docs:
-                    if self._is_likely_perovskite(doc):
-                        perovskite_candidates.append(doc)
+                # Filter for double perovskite patterns
+                halide_count = 0
+                for doc in halide_docs:
+                    formula_anon = None
+                    if isinstance(doc, dict):
+                        formula_anon = doc.get('formula_anonymous', '')
+                    else:
+                        formula_anon = getattr(doc, 'formula_anonymous', '')
+                    
+                    if formula_anon in ['ABC2D6', 'A2BC2D6', 'A2B2C6', 'A2BB\'C6', 'ABCD6']:
+                        all_perovskite_materials.append(doc)
+                        halide_count += 1
                 
-                print(f"Identified {len(perovskite_candidates)} additional Perovskite candidates")
-                all_perovskite_materials.extend(perovskite_candidates)
+                print(f"      Found {halide_count} halide double perovskites")
                 
             except Exception as e:
-                print(f"Broad search failed: {e}")
+                print(f"      Halide search failed: {e}")
             
-            # Remove duplicates based on material_id
+            # Search 3b: Oxide double perovskites  
+            try:
+                print("  3b. Oxide double perovskites...")
+                oxide_search_args = {
+                    'elements': ['O'] + possible_A_site[:4] + possible_B_site[:6],  # Limited element set
+                    'num_elements': (3, 5),
+                    'num_sites': (8, 20),
+                    'energy_above_hull': (None, 0.5),
+                }
+                if fields is not None:
+                    oxide_search_args['fields'] = fields
+                
+                oxide_docs = self.mpr.materials.summary.search(**oxide_search_args)
+                
+                print(f"      Downloaded {len(oxide_docs)} oxide materials")
+                
+                # Filter for double perovskite patterns
+                oxide_count = 0
+                for doc in oxide_docs:
+                    formula_anon = None
+                    if isinstance(doc, dict):
+                        formula_anon = doc.get('formula_anonymous', '')
+                    else:
+                        formula_anon = getattr(doc, 'formula_anonymous', '')
+                    
+                    if formula_anon in ['ABC2D6', 'A2BC2D6', 'A2B2C6', 'A2BB\'C6', 'ABCD6']:
+                        all_perovskite_materials.append(doc)
+                        oxide_count += 1
+                
+                print(f"      Found {oxide_count} oxide double perovskites")
+                
+            except Exception as e:
+                print(f"      Oxide search failed: {e}")
+                
+            print(f"\n  Total double perovskites collected: {len(all_perovskite_materials)}")
+            
+            # Remove duplicates based on material_id ONLY (not formula)
+            # Different structures with same formula have different bandgaps = good training signal
             unique_materials = {}
             for material in all_perovskite_materials:
                 if isinstance(material, dict):
@@ -793,7 +836,8 @@ class EnhancedMaterialsProjectDownloader:
             
             final_materials = list(unique_materials.values())
             
-            print(f"\nCOMPLETE: Found {len(final_materials)} unique Perovskite materials")
+            print(f"\nCOMPLETE: Found {len(final_materials)} unique DOUBLE PEROVSKITE materials")
+            print("Deduplication: by material_id only (keeping different structures of same formula)")
             print("Materials include both experimental and theoretical structures")
             print("Data includes all requested fields where available")
             
@@ -802,6 +846,60 @@ class EnhancedMaterialsProjectDownloader:
         except Exception as e:
             print(f"Error in comprehensive Perovskite search: {e}")
             raise
+    
+    def _is_double_perovskite(self, doc: Any) -> bool:
+        """
+        Check for DOUBLE PEROVSKITE materials (ABC2D6 formula family).
+        
+        Args:
+            doc: Material document
+            
+        Returns:
+            True if material is likely a double perovskite
+        """
+        try:
+            # Get material properties
+            if isinstance(doc, dict):
+                elements = doc.get('elements', [])
+                formula_anon = doc.get('formula_anonymous', '')
+                nelements = doc.get('nelements', 0)
+                nsites = doc.get('nsites', 0)
+            else:
+                elements = getattr(doc, 'elements', [])
+                formula_anon = getattr(doc, 'formula_anonymous', '')
+                nelements = getattr(doc, 'nelements', 0)
+                nsites = getattr(doc, 'nsites', 0)
+            
+            if not elements:
+                return False
+            
+            # Double perovskites typically have 3-4 elements (ABC2D6)
+            if nelements < 3 or nelements > 5:
+                return False
+            
+            # Check formula_anonymous pattern
+            if formula_anon in ['ABC2D6', 'A2BC2D6', 'A2BB\'C6']:
+                return True
+            
+            # Check site count (ABC2D6 should have specific ranges)
+            # A=1-2 sites, B=2-3 sites, D=6 sites → total ~9-12 sites
+            if nsites < 8 or nsites > 20:
+                return False
+            
+            # Check for typical double perovskite elements
+            halide_elements = ['Cl', 'Br', 'I', 'F']
+            a_site = ['Cs', 'Rb', 'K', 'Na', 'Tl', 'Ba', 'Sr', 'Ca']
+            b_site = ['Ag', 'Bi', 'Sb', 'In', 'Ga', 'Cu', 'Fe', 'Mn', 'Co', 'Sn', 'Pb', 'Au']
+            
+            has_halide_or_oxide = any(elem in halide_elements for elem in elements) or 'O' in elements
+            has_a_site = any(elem in a_site for elem in elements)
+            has_b_site = any(elem in b_site for elem in elements)
+            
+            # Must have anion and at least one cation type
+            return has_halide_or_oxide and (has_a_site or has_b_site)
+            
+        except Exception as e:
+            return False
     
     def _is_likely_perovskite(self, doc: Any) -> bool:
         """

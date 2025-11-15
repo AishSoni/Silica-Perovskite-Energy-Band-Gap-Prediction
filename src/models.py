@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import joblib
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional, Any, List
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.neural_network import MLPRegressor, MLPClassifier
 from sklearn.svm import SVR
@@ -530,6 +530,82 @@ class ModelTrainer:
 
 
 def train_models(
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    feature_names: List[str],
+    output_dir: str = 'models',
+    task: str = 'regression'
+) -> Dict:
+    """
+    Train multiple models and save them.
+    
+    Args:
+        X_train: Training features (DataFrame or array)
+        y_train: Training target (Series or array)
+        X_test: Test features (DataFrame or array)
+        y_test: Test target (Series or array)
+        feature_names: List of feature names
+        output_dir: Directory to save models
+        task: 'regression' or 'classification'
+    
+    Returns:
+        Dictionary with trained model information
+    """
+    print("\n" + "="*80)
+    print(f"MODEL TRAINING - {task.upper()}")
+    print("="*80 + "\n")
+    
+    print(f"Training set: {X_train.shape}")
+    print(f"Test set: {X_test.shape}")
+    print(f"Features: {len(feature_names)}")
+    
+    # Initialize trainer
+    trainer = ModelTrainer(random_state=42)
+    
+    # Train models based on task
+    if task == 'regression':
+        print("\n1. Training LightGBM (primary)...")
+        lgbm_model = trainer.train_lgbm_regression(X_train, y_train, X_test, y_test)
+        
+        print("\n2. Training baseline models...")
+        baseline_models = trainer.train_baseline_models(X_train, y_train, task='regression')
+        
+    else:  # classification
+        print("\n1. Training XGBoost Classifier (primary)...")
+        xgb_model = trainer.train_xgb_classifier(X_train, y_train, X_test, y_test)
+        
+        print("\n2. Training baseline models...")
+        baseline_models = trainer.train_baseline_models(X_train, y_train, task='classification')
+    
+    # Save models
+    print(f"\nSaving models to {output_dir}...")
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    trained_models = {}
+    for model_name, model in trainer.models.items():
+        model_path = output_dir / f"{model_name}.pkl"
+        joblib.dump(model, model_path)
+        print(f"✓ {model_name} saved to {model_path}")
+        
+        trained_models[model_name] = {
+            'model': model,
+            'path': str(model_path)
+        }
+    
+    # Save feature names
+    feature_names_path = output_dir / "feature_names.pkl"
+    joblib.dump(feature_names, feature_names_path)
+    print(f"✓ Feature names saved to {feature_names_path}")
+    
+    print("\n✓ Model training complete!")
+    
+    return trained_models
+
+
+def train_models_from_paths(
     X_train_path: str,
     y_train_path: str,
     X_test_path: str,
@@ -538,7 +614,62 @@ def train_models(
     output_dir: str = 'models'
 ) -> Dict:
     """
-    Main function to train all models.
+    Main function to train all models from saved data paths.
+    
+    Args:
+        X_train_path: Path to training features
+        y_train_path: Path to training target
+        X_test_path: Path to test features
+        y_test_path: Path to test target
+        task: 'regression' or 'classification'
+        output_dir: Directory to save models
+    
+    Returns:
+        Dictionary with trained models
+    """
+    print("\n" + "="*80)
+    print(f"MODEL TRAINING - {task.upper()}")
+    print("="*80 + "\n")
+    
+    # Load data
+    print("Loading preprocessed data...")
+    X_train = joblib.load(X_train_path)
+    y_train = joblib.load(y_train_path)
+    X_test = joblib.load(X_test_path)
+    y_test = joblib.load(y_test_path)
+    
+    print(f"✓ Training set: {X_train.shape}")
+    print(f"✓ Test set: {X_test.shape}")
+    
+    # Get feature names
+    if hasattr(X_train, 'columns'):
+        feature_names = list(X_train.columns)
+    else:
+        feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
+    
+    # Call the main train_models function
+    return train_models(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        feature_names=feature_names,
+        output_dir=output_dir,
+        task=task
+    )
+
+
+# Keep the old function name for backwards compatibility
+def train_models_old(
+    X_train_path: str,
+    y_train_path: str,
+    X_test_path: str,
+    y_test_path: str,
+    task: str = 'regression',
+    output_dir: str = 'models'
+) -> Dict:
+    """
+    Legacy function - use train_models_from_paths instead.
     
     Args:
         X_train_path: Path to training features

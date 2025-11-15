@@ -1,0 +1,14 @@
+# F10 Feature Subset (10 features)
+# CV R² Score: 0.7386
+# Created for 5,776 samples
+
+formation_energy_per_atom
+energy_above_hull
+MagpieData avg_dev NUnfilled
+frac d valence electrons
+avg_electron_affinity
+MagpieData mean SpaceGroupNumber
+MagpieData avg_dev Column
+MagpieData mean MendeleevNumber
+MagpieData maximum MeltingT
+MagpieData mean Column

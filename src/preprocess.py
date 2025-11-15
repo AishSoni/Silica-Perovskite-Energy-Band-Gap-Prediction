@@ -460,3 +460,75 @@ if __name__ == "__main__":
             print(f"\n✗ Error with {strategy}: {e}")
             import traceback
             traceback.print_exc()
+
+
+def split_and_scale_data(
+    X: pd.DataFrame,
+    y: pd.Series,
+    feature_names: List[str],
+    test_size: float = 0.2,
+    random_state: int = 42,
+    scaler_type: str = 'robust'
+) -> Dict:
+    """
+    Split data into train/test sets and apply scaling.
+    
+    Args:
+        X: Feature DataFrame
+        y: Target Series
+        feature_names: List of feature names
+        test_size: Fraction of data to use for test set
+        random_state: Random seed
+        scaler_type: Type of scaler ('robust', 'standard', or None)
+    
+    Returns:
+        Dictionary with keys: X_train, X_test, y_train, y_test, scaler
+    """
+    print(f"Splitting data: {100*(1-test_size):.0f}% train, {100*test_size:.0f}% test...")
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, 
+        test_size=test_size, 
+        random_state=random_state,
+        shuffle=True
+    )
+    
+    print(f"  Train: {len(X_train)} samples")
+    print(f"  Test: {len(X_test)} samples")
+    
+    # Apply scaling
+    scaler = None
+    if scaler_type:
+        print(f"Applying {scaler_type} scaling...")
+        
+        if scaler_type == 'robust':
+            scaler = RobustScaler()
+        elif scaler_type == 'standard':
+            scaler = StandardScaler()
+        else:
+            raise ValueError(f"Unknown scaler type: {scaler_type}")
+        
+        X_train = pd.DataFrame(
+            scaler.fit_transform(X_train),
+            columns=feature_names,
+            index=X_train.index
+        )
+        
+        X_test = pd.DataFrame(
+            scaler.transform(X_test),
+            columns=feature_names,
+            index=X_test.index
+        )
+        
+        print(f"  ✓ Scaling applied")
+    
+    return {
+        'X_train': X_train,
+        'X_test': X_test,
+        'y_train': y_train,
+        'y_test': y_test,
+        'scaler': scaler,
+        'feature_names': feature_names
+    }
+

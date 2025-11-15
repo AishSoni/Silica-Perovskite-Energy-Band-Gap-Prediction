@@ -1,0 +1,207 @@
+feature,importance
+formation_energy_per_atom,425
+energy_above_hull,242
+energy_per_atom,174
+MagpieData avg_dev NUnfilled,171
+frac d valence electrons,171
+avg_electron_affinity,138
+MagpieData mean SpaceGroupNumber,138
+MagpieData avg_dev Column,132
+MagpieData mean MendeleevNumber,131
+MagpieData maximum MeltingT,126
+MagpieData mean Column,126
+density,125
+MagpieData mean Electronegativity,124
+frac p valence electrons,122
+MagpieData mean MeltingT,116
+MagpieData avg_dev MeltingT,104
+MagpieData mean NUnfilled,98
+MagpieData avg_dev SpaceGroupNumber,93
+gamma_dev_from_90,91
+MagpieData avg_dev NValence,90
+volume,87
+avg_electronegativity,81
+std_electronegativity,77
+avg_ionization_energy,74
+Eu,70
+lattice_b_over_a,70
+MagpieData maximum GSmagmom,65
+avg_group,65
+lattice_c,63
+std_atomic_number,62
+MagpieData maximum Number,60
+avg_valence,60
+lattice_c_over_a,59
+MagpieData mean NValence,58
+Cu,58
+MagpieData avg_dev MendeleevNumber,55
+lattice_a,55
+MagpieData mean GSvolume_pa,55
+MagpieData mean NpUnfilled,54
+lattice_b,54
+avg_atomic_radius,51
+frac s valence electrons,51
+MagpieData maximum NUnfilled,50
+lattice_alpha,49
+MagpieData mean Number,49
+MagpieData avg_dev CovalentRadius,49
+MagpieData avg_dev NpUnfilled,49
+total_angle_deviation,46
+beta_dev_from_90,45
+mass_per_proton,45
+MagpieData avg_dev Number,40
+frac f valence electrons,39
+MagpieData maximum NValence,38
+lattice_gamma,38
+Yb,38
+MagpieData minimum GSvolume_pa,37
+MagpieData maximum NfUnfilled,36
+alpha_dev_from_90,34
+lattice_beta,33
+avg_atomic_mass,33
+Ti,33
+MagpieData minimum MendeleevNumber,31
+V,30
+MagpieData mean GSbandgap,30
+Ru,29
+MagpieData maximum NdValence,27
+MagpieData minimum NUnfilled,25
+Al,24
+W,24
+MagpieData range CovalentRadius,24
+Mo,23
+MagpieData maximum CovalentRadius,22
+MagpieData maximum NdUnfilled,22
+MagpieData avg_dev Row,20
+In,20
+Ca,19
+min_electronegativity,19
+Hg,19
+Ag,18
+MagpieData avg_dev NdValence,17
+MagpieData mean NdUnfilled,17
+MagpieData minimum Column,17
+MagpieData mean NdValence,16
+MagpieData mean NfUnfilled,16
+MagpieData maximum GSvolume_pa,15
+MagpieData mean NsValence,15
+MagpieData maximum NpUnfilled,15
+Ba,13
+MagpieData avg_dev NdUnfilled,13
+MagpieData avg_dev NsValence,11
+MagpieData maximum GSbandgap,11
+Ni,11
+MagpieData mode MendeleevNumber,11
+Pa,10
+MagpieData range Row,10
+Tl,10
+Bi,9
+Cd,9
+nsites,9
+MagpieData minimum NsValence,9
+frac_metal,9
+frac_nonmetal,9
+MagpieData mode Number,9
+MagpieData minimum Number,9
+n_d_electrons,8
+MagpieData range Column,8
+Ta,7
+MagpieData mean NsUnfilled,7
+Mn,7
+MagpieData maximum MendeleevNumber,6
+MagpieData maximum SpaceGroupNumber,6
+Fe,6
+Ir,6
+Nd,6
+MagpieData mode MeltingT,6
+Sb,6
+Lu,6
+MagpieData maximum NfValence,5
+Th,5
+Au,5
+Cr,5
+La,5
+As,5
+Re,4
+Li,4
+Cs,4
+MagpieData maximum Column,4
+MagpieData mean NfValence,4
+Na,3
+Y,3
+Mg,3
+K,3
+Os,3
+Sr,2
+Te,2
+MagpieData minimum SpaceGroupNumber,2
+Zn,2
+Co,2
+n_atoms,1
+MagpieData minimum NValence,1
+MagpieData minimum MeltingT,1
+MagpieData maximum NsUnfilled,1
+Sc,1
+Sm,1
+H,1
+Ge,1
+Si,1
+Ho,1
+Br,1
+Rb,1
+MagpieData minimum CovalentRadius,0
+MagpieData mode Column,0
+MagpieData minimum Row,0
+MagpieData maximum Row,0
+max_electronegativity,0
+MagpieData minimum NdValence,0
+MagpieData maximum NsValence,0
+MagpieData mode NsValence,0
+MagpieData mode NValence,0
+MagpieData avg_dev NfValence,0
+MagpieData mode NfValence,0
+MagpieData minimum NfValence,0
+MagpieData minimum NpValence,0
+MagpieData minimum NpUnfilled,0
+MagpieData mode NpUnfilled,0
+MagpieData mode NsUnfilled,0
+MagpieData mode NfUnfilled,0
+MagpieData mode NdUnfilled,0
+Cl,0
+MagpieData minimum NdUnfilled,0
+MagpieData mode GSvolume_pa,0
+MagpieData mode NUnfilled,0
+MagpieData minimum GSbandgap,0
+MagpieData mode GSmagmom,0
+Se,0
+Ga,0
+C,0
+B,0
+F,0
+P,0
+S,0
+Be,0
+O,0
+N,0
+Tc,0
+Rh,0
+Pd,0
+Sn,0
+Zr,0
+Nb,0
+Er,0
+Dy,0
+Tb,0
+Gd,0
+Pm,0
+I,0
+Ce,0
+Pr,0
+Ac,0
+Pb,0
+Pt,0
+Tm,0
+Hf,0
+Pu,0
+U,0
+Np,0
