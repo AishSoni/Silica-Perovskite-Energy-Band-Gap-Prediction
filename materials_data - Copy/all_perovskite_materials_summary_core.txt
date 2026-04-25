@@ -1,0 +1,12 @@
+Materials Data Summary
+=====================
+
+Total materials: 986
+Date downloaded: 2025-10-11 16:54:09
+
+Crystal systems: {<CrystalSystem.ortho: 'Orthorhombic'>: 292, <CrystalSystem.cubic: 'Cubic'>: 253, <CrystalSystem.mono: 'Monoclinic'>: 135, <CrystalSystem.trig: 'Trigonal'>: 108, <CrystalSystem.tri: 'Triclinic'>: 92, <CrystalSystem.hex_: 'Hexagonal'>: 70, <CrystalSystem.tet: 'Tetragonal'>: 36}
+Theoretical vs Experimental: {True: 623, False: 363}
+Band gap range: 0.000 - 4.155 eV
+Energy above hull range: 0.000000 - 5.074607 eV/atom
+Number of sites range: 5 - 90
+Number of elements distribution: {3: 986}

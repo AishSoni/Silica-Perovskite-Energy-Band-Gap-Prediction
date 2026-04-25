@@ -14,11 +14,11 @@ config.py
 *.key
 *.pem
 secrets/
-*.tex
-*.pdf
-*.out
-*.log
 *.aux
+*.log
+*.out
+*.pdf
+*.json
 
 # ============================================================================
 # PYTHON
