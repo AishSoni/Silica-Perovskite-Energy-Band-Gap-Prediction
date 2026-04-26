@@ -1,39 +1,109 @@
-# Query configuration for Materials Project API
-# Used to download perovskite materials data
+# Canonical Materials Project query configuration.
+# This file is the single source of truth for the corrected pipeline.
 
-query_parameters:
-  # Chemical formula pattern
-  formula_pattern: "ABC2D6"  # Double perovskite pattern
-  
-  # Element constraints (if used)
-  # elements: []  # Specific elements to include
-  # exclude_elements: []  # Elements to exclude
-  
-  # Number of elements in formula
+dataset:
+  name: double_perovskites
+  family: double_perovskite
+  description: "General ABC2D6 / A2BB'X6 double perovskites, including oxide and halide families."
+
+chemistry:
+  # Broad element pools for candidate retrieval and post-download validation.
+  # Validation, not the raw API query alone, decides whether a material is accepted.
+  a_site:
+    - Li
+    - Na
+    - K
+    - Rb
+    - Cs
+    - Mg
+    - Ca
+    - Sr
+    - Ba
+    - La
+    - Y
+    - Bi
+    - Pb
+    - Tl
+  b_site:
+    - Ag
+    - Al
+    - Au
+    - Bi
+    - Cd
+    - Co
+    - Cr
+    - Cu
+    - Fe
+    - Ga
+    - Hf
+    - In
+    - Ir
+    - Mn
+    - Mo
+    - Nb
+    - Ni
+    - Os
+    - Pb
+    - Re
+    - Sb
+    - Sc
+    - Sn
+    - Ta
+    - Ti
+    - V
+    - W
+    - Zn
+    - Zr
+  x_site:
+    - O
+    - F
+    - Cl
+    - Br
+    - I
+
+query:
+  # Candidate search is intentionally broad; validation performs strict filtering.
   num_elements:
-    min: 4
-    max: 6
-  
-  # Band gap constraints (eV)
+    min: 3
+    max: 5
+  num_sites:
+    min: 8
+    max: 40
+  energy_above_hull:
+    min: null
+    max: 0.2
   band_gap:
     min: 0.0
     max: 10.0
-  
-  # Thermodynamic stability
-  energy_above_hull:
-    max: 0.2  # eV/atom (materials within 0.2 eV of hull are potentially synthesizable)
-  
-  # Number of sites in unit cell
-  nsites:
-    min: 1
-    max: 200
+  theoretical: null
+  include_deprecated: false
+  chunk_size: 1000
+  max_results: null
 
-# Fields to download from Materials Project
+validation:
+  accepted_formula_anonymous:
+    - ABC2D6
+    - A2BC2D6
+    - A2B2C6
+    - A2BB'C6
+    - ABCD6
+  require_band_gap: true
+  require_structure: true
+  require_x_site: true
+  require_a_or_b_site: true
+  require_not_deprecated: true
+  deduplicate_by:
+    - material_id
+  metal_threshold_eV: 0.1
+
 fields:
   - material_id
   - formula_pretty
+  - formula_anonymous
   - elements
   - nelements
+  - structure
+  - symmetry
   - band_gap
   - is_gap_direct
   - formation_energy_per_atom
@@ -41,45 +111,33 @@ fields:
   - density
   - volume
   - nsites
-  - symmetry
-  - structure  # Optional: only if needed for graph neural networks
+  - theoretical
+  - deprecated
+  - energy_per_atom
+  - is_stable
 
-# Data filtering (post-download)
-filters:
-  remove_metals:
-    enabled: true
-    threshold: 0.1  # eV (materials with band_gap < 0.1 are considered metallic)
-  
-  remove_duplicates:
-    enabled: true
-    keys:
-      - formula_pretty
-      - spacegroup_symbol
+paths:
+  raw_json: data/raw/double_perovskites_raw.json
+  raw_csv: data/raw/double_perovskites_raw.csv
+  manifest: data/raw/dataset_manifest.json
+  validated_csv: data/processed/validated_materials.csv
+  features_csv: data/processed/perovskites_features.csv
+  validation_dir: results/dataset_validation
+  feature_sets_dir: results/feature_sets
+  models_dir: models
+  figures_dir: figures
+  results_dir: results
 
-# Dataset variants
-dataset_variants:
-  all_perovskites:
-    description: "All double perovskites including metals"
-    apply_metal_filter: false
-  
-  nonmetal_perovskites:
-    description: "Semiconducting and insulating perovskites only"
-    apply_metal_filter: true
-    band_gap_min: 0.1
+modeling:
+  random_state: 42
+  test_size: 0.2
+  imputation_strategy: median
+  scaler: robust
+  apply_smote: true
+  feature_subset_sizes:
+    - 10
+    - 22
 
-# Notes
 notes: |
-  This configuration reproduces the dataset selection from:
-  "Machine Learning for Predicting Bandgap Energies of Double Perovskites"
-  Sradhasagar et al., Solar Energy, 2024
-  
-  The original paper used ~4735 ABC₂D₆ double perovskites from Materials Project.
-  
-  Key criteria:
-  - Double perovskite structure (ABC₂D₆)
-  - Band gap data available
-  - Energy above hull < 0.2 eV/atom (thermodynamically favorable)
-  
-  Two dataset variants are used:
-  1. All materials (including metals with band_gap ~ 0)
-  2. Non-metals only (band_gap >= 0.1 eV) - expected better regression performance
+  Do not treat formula_anonymous alone as proof of perovskite structure.
+  The downloader creates candidates; src/validate_dataset.py applies the acceptance rules.
