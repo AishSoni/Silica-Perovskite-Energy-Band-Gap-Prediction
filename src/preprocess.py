@@ -1,534 +1,193 @@
 """
-Preprocessing module for feature preparation, imputation, scaling, and splitting.
+Leakage-free preprocessing for the corrected ML pipeline.
 """
 
-import pandas as pd
-import numpy as np
-import joblib
+from __future__ import annotations
+
+import hashlib
+import json
 from pathlib import Path
-from typing import Tuple, List, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+import joblib
+import numpy as np
+import pandas as pd
+from imblearn.over_sampling import SMOTE
+from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import RobustScaler, StandardScaler
-from sklearn.impute import SimpleImputer, KNNImputer
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
-from imblearn.over_sampling import SMOTE
-import warnings
 
-warnings.filterwarnings('ignore')
+from .data_io import leakage_columns
 
 
-class DataPreprocessor:
-    """
-    Handles all preprocessing steps for ML pipeline.
-    """
-    
-    def __init__(self, random_state: int = 42):
-        """
-        Initialize preprocessor.
-        
-        Args:
-            random_state: Random seed for reproducibility
-        """
-        self.random_state = random_state
-        self.scaler = None
-        self.imputer = None
-        self.feature_names = None
-        self.target_col = 'band_gap'
-        self.classification_target_col = 'is_gap_direct'
-    
-    def remove_duplicates(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Remove duplicate materials based on formula and spacegroup.
-        
-        Args:
-            df: Input DataFrame
-        
-        Returns:
-            DataFrame without duplicates
-        """
-        print("Removing duplicates...")
-        initial_count = len(df)
-        
-        # Remove duplicates based on formula_pretty and spacegroup_symbol
-        if 'formula_pretty' in df.columns and 'spacegroup_symbol' in df.columns:
-            df = df.drop_duplicates(subset=['formula_pretty', 'spacegroup_symbol'])
-        else:
-            df = df.drop_duplicates(subset=['formula_pretty'])
-        
-        removed = initial_count - len(df)
-        print(f"✓ Removed {removed} duplicates ({removed/initial_count*100:.1f}%)")
-        
-        return df
-    
-    def separate_features_target(
-        self, 
-        df: pd.DataFrame,
-        target_col: Optional[str] = None,
-        exclude_cols: Optional[List[str]] = None
-    ) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        Separate features from target variable.
-        
-        Args:
-            df: Input DataFrame
-            target_col: Target column name
-            exclude_cols: Columns to exclude from features
-        
-        Returns:
-            Tuple of (features DataFrame, target Series)
-        """
-        if target_col is None:
-            target_col = self.target_col
-        
-        if exclude_cols is None:
-            exclude_cols = [
-                'material_id', 'formula_pretty', 'composition', 
-                'elements', 'structure', 'symmetry',
-                target_col
-            ]
-        
-        # Get feature columns
-        feature_cols = [col for col in df.columns if col not in exclude_cols]
-        
-        # Separate X and y
-        X = df[feature_cols].copy()
-        y = df[target_col].copy()
-        
-        self.feature_names = feature_cols
-        
-        print(f"Features: {len(feature_cols)} columns")
-        print(f"Target: {target_col}")
-        print(f"Samples: {len(df)}")
-        
-        return X, y
-    
-    def impute_missing_values(
-        self, 
-        X: pd.DataFrame, 
-        strategy: str = 'mean'
-    ) -> pd.DataFrame:
-        """
-        Impute missing values using specified strategy.
-        
-        Args:
-            X: Feature DataFrame
-            strategy: Imputation strategy ('mean', 'median', 'knn', 'mice', 'zero')
-        
-        Returns:
-            Imputed DataFrame
-        """
-        print(f"Imputing missing values using '{strategy}' strategy...")
-        
-        # Check missing values
-        missing_count = X.isnull().sum().sum()
-        missing_pct = missing_count / (X.shape[0] * X.shape[1]) * 100
-        print(f"  Missing values: {missing_count} ({missing_pct:.2f}%)")
-        
-        if missing_count == 0:
-            print("  No missing values found, skipping imputation")
-            return X
-        
-        X_imputed = X.copy()
-
-        # Coerce to numeric where possible (booleans->ints, numeric-like strings->numbers).
-        # Non-convertible values become NaN so that imputer can handle them.
-        X_imputed = X_imputed.apply(pd.to_numeric, errors='coerce')
-
-        # Detect columns that are entirely NaN (some featurizers add empty structural columns).
-        all_nan_cols = X_imputed.columns[X_imputed.isnull().all()].tolist()
-        if all_nan_cols:
-            print(f"  Found {len(all_nan_cols)} all-NaN columns: {all_nan_cols}")
-            print(f"  Dropping these columns as they contain no information...")
-            X_imputed = X_imputed.drop(columns=all_nan_cols)
-            # Update feature names
-            if self.feature_names:
-                self.feature_names = [f for f in self.feature_names if f not in all_nan_cols]
-
-        if strategy == 'mean':
-            self.imputer = SimpleImputer(strategy='mean')
-        elif strategy == 'median':
-            self.imputer = SimpleImputer(strategy='median')
-        elif strategy == 'zero':
-            self.imputer = SimpleImputer(strategy='constant', fill_value=0)
-        elif strategy == 'knn':
-            self.imputer = KNNImputer(n_neighbors=5)
-        elif strategy == 'mice':
-            self.imputer = IterativeImputer(random_state=self.random_state, max_iter=10)
-        else:
-            raise ValueError(f"Unknown imputation strategy: {strategy}")
-        
-        # Fit and transform
-        X_imputed_array = self.imputer.fit_transform(X_imputed)
-        X_imputed = pd.DataFrame(X_imputed_array, columns=X_imputed.columns, index=X_imputed.index)
-        
-        print(f"✓ Imputation complete")
-        
-        return X_imputed
-    
-    def scale_features(
-        self, 
-        X: pd.DataFrame, 
-        scaler_type: str = 'robust'
-    ) -> pd.DataFrame:
-        """
-        Scale features using specified scaler.
-        
-        Args:
-            X: Feature DataFrame
-            scaler_type: Type of scaler ('robust' or 'standard')
-        
-        Returns:
-            Scaled DataFrame
-        """
-        print(f"Scaling features using {scaler_type} scaler...")
-        
-        if scaler_type == 'robust':
-            self.scaler = RobustScaler()
-        elif scaler_type == 'standard':
-            self.scaler = StandardScaler()
-        else:
-            raise ValueError(f"Unknown scaler type: {scaler_type}")
-        
-        X_scaled_array = self.scaler.fit_transform(X)
-        X_scaled = pd.DataFrame(X_scaled_array, columns=X.columns, index=X.index)
-        
-        print(f"✓ Scaling complete")
-        
-        return X_scaled
-    
-    def split_data(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        test_size: float = 0.2,
-        stratify: bool = False
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-        """
-        Split data into train and test sets.
-        
-        Args:
-            X: Feature DataFrame
-            y: Target Series
-            test_size: Fraction of data for test set
-            stratify: Whether to stratify split (for classification)
-        
-        Returns:
-            Tuple of (X_train, X_test, y_train, y_test)
-        """
-        print(f"Splitting data (test_size={test_size})...")
-        
-        stratify_col = None
-        if stratify:
-            # Create bins for stratification
-            y_binned = pd.cut(y, bins=5, labels=False)
-            stratify_col = y_binned
-        
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y,
-            test_size=test_size,
-            random_state=self.random_state,
-            stratify=stratify_col
-        )
-        
-        print(f"✓ Train set: {len(X_train)} samples")
-        print(f"✓ Test set: {len(X_test)} samples")
-        
-        return X_train, X_test, y_train, y_test
-    
-    def apply_smote(
-        self,
-        X_train: pd.DataFrame,
-        y_train: pd.Series,
-        sampling_strategy: str = 'auto'
-    ) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        Apply SMOTE for handling class imbalance (classification only).
-        
-        Args:
-            X_train: Training features
-            y_train: Training labels
-            sampling_strategy: SMOTE sampling strategy
-        
-        Returns:
-            Tuple of (X_resampled, y_resampled)
-        """
-        print("Applying SMOTE for class balancing...")
-        
-        # Check class distribution
-        class_counts = y_train.value_counts()
-        print(f"  Original class distribution:\n{class_counts}")
-        
-        # Apply SMOTE
-        smote = SMOTE(
-            sampling_strategy=sampling_strategy,
-            random_state=self.random_state
-        )
-        
-        X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
-        
-        # Convert back to DataFrame/Series
-        X_resampled = pd.DataFrame(X_resampled, columns=X_train.columns)
-        y_resampled = pd.Series(y_resampled, name=y_train.name)
-        
-        class_counts_new = y_resampled.value_counts()
-        print(f"  New class distribution:\n{class_counts_new}")
-        print(f"✓ SMOTE applied: {len(X_resampled)} samples")
-        
-        return X_resampled, y_resampled
-    
-    def save_preprocessor(self, output_dir: str, prefix: str = ''):
-        """
-        Save scaler and imputer for later use.
-        
-        Args:
-            output_dir: Directory to save preprocessor objects
-            prefix: Prefix for saved files
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        if self.scaler:
-            scaler_path = output_dir / f"{prefix}scaler.pkl"
-            joblib.dump(self.scaler, scaler_path)
-            print(f"✓ Scaler saved to {scaler_path}")
-        
-        if self.imputer:
-            imputer_path = output_dir / f"{prefix}imputer.pkl"
-            joblib.dump(self.imputer, imputer_path)
-            print(f"✓ Imputer saved to {imputer_path}")
-        
-        if self.feature_names:
-            features_path = output_dir / f"{prefix}feature_names.txt"
-            with open(features_path, 'w') as f:
-                f.write('\n'.join(self.feature_names))
-            print(f"✓ Feature names saved to {features_path}")
+def assert_no_leakage_features(feature_names: List[str], task: str) -> None:
+    """Raise if a task-specific leakage column is present."""
+    forbidden = leakage_columns(task)
+    overlap = forbidden & set(feature_names)
+    if overlap:
+        raise ValueError(f"Leakage columns found for {task}: {sorted(overlap)}")
 
 
-def preprocess_data(
-    input_path: str = "data/processed/perovskites_features.csv",
-    output_dir: str = "data/processed",
-    imputation_strategy: str = 'mean',
-    test_size: float = 0.2,
-    remove_metals: bool = False,
-    for_classification: bool = False
-) -> Dict:
-    """
-    Complete preprocessing pipeline.
-    
-    Args:
-        input_path: Path to featurized data
-        output_dir: Directory to save processed data
-        imputation_strategy: Strategy for missing value imputation
-        test_size: Fraction for test set
-        remove_metals: Whether to exclude metallic materials
-        for_classification: Whether to prepare for classification task
-    
-    Returns:
-        Dictionary with processed data and metadata
-    """
-    print("\n" + "="*80)
-    print("DATA PREPROCESSING")
-    print("="*80 + "\n")
-    
-    # Load data
-    print(f"Loading data from {input_path}...")
-    df = pd.read_csv(input_path)
-    print(f"Loaded {len(df)} materials")
-    
-    # Remove metals if requested
-    if remove_metals:
-        print("\nRemoving metallic materials (band_gap < 0.1 eV)...")
-        initial_count = len(df)
-        df = df[df['band_gap'] >= 0.1]
-        removed = initial_count - len(df)
-        print(f"Removed {removed} metallic materials")
-    
-    # Initialize preprocessor
-    preprocessor = DataPreprocessor(random_state=42)
-    
-    # Remove duplicates
-    df = preprocessor.remove_duplicates(df)
-    
-    # Separate features and target
-    target_col = 'is_gap_direct' if for_classification else 'band_gap'
-    X, y = preprocessor.separate_features_target(df, target_col=target_col)
-    
-    # Impute missing values
-    X = preprocessor.impute_missing_values(X, strategy=imputation_strategy)
-    
-    # Scale features
-    X = preprocessor.scale_features(X, scaler_type='robust')
-    
-    # Split data
-    stratify = for_classification
-    X_train, X_test, y_train, y_test = preprocessor.split_data(
-        X, y, test_size=test_size, stratify=stratify
-    )
-    
-    # Apply SMOTE for classification if needed
-    if for_classification:
-        # Check if classes are imbalanced
-        class_counts = y_train.value_counts()
-        imbalance_ratio = class_counts.max() / class_counts.min()
-        
-        if imbalance_ratio > 1.5:
-            X_train, y_train = preprocessor.apply_smote(X_train, y_train)
-    
-    # Save preprocessor objects
-    prefix = f"{imputation_strategy}_{'classification' if for_classification else 'regression'}_"
-    if remove_metals:
-        prefix += "nonmetals_"
-    
-    preprocessor.save_preprocessor(output_dir, prefix=prefix)
-    
-    # Save processed data
-    output_dir = Path(output_dir)
-    
-    # Save split indices
-    split_indices = {
-        'train_idx': X_train.index.tolist(),
-        'test_idx': X_test.index.tolist()
-    }
-    split_path = output_dir / f"{prefix}split_indices.pkl"
-    joblib.dump(split_indices, split_path)
-    print(f"✓ Split indices saved to {split_path}")
-    
-    # Save processed datasets
-    joblib.dump(X_train, output_dir / f"{prefix}X_train.pkl")
-    joblib.dump(X_test, output_dir / f"{prefix}X_test.pkl")
-    joblib.dump(y_train, output_dir / f"{prefix}y_train.pkl")
-    joblib.dump(y_test, output_dir / f"{prefix}y_test.pkl")
-    print(f"✓ Processed datasets saved to {output_dir}")
-    
-    # Create metadata
-    metadata = {
-        'n_samples': len(df),
-        'n_features': X.shape[1],
-        'n_train': len(X_train),
-        'n_test': len(X_test),
-        'imputation_strategy': imputation_strategy,
-        'test_size': test_size,
-        'remove_metals': remove_metals,
-        'task': 'classification' if for_classification else 'regression',
-        'target_col': target_col,
-        'feature_names': preprocessor.feature_names
-    }
-    
-    # Save metadata
-    import json
-    meta_path = output_dir / f"{prefix}preprocessing_metadata.json"
-    with open(meta_path, 'w') as f:
-        json.dump(metadata, f, indent=2, default=str)
-    print(f"✓ Metadata saved to {meta_path}")
-    
-    print("\n✓ Preprocessing complete!")
-    
-    return {
-        'X_train': X_train,
-        'X_test': X_test,
-        'y_train': y_train,
-        'y_test': y_test,
-        'metadata': metadata,
-        'preprocessor': preprocessor
-    }
+def make_imputer(strategy: str):
+    """Create an imputer from a config strategy."""
+    if strategy in {"mean", "median"}:
+        return SimpleImputer(strategy=strategy)
+    if strategy == "zero":
+        return SimpleImputer(strategy="constant", fill_value=0)
+    if strategy == "knn":
+        return KNNImputer(n_neighbors=5)
+    raise ValueError(f"Unknown imputation strategy: {strategy}")
 
 
-if __name__ == "__main__":
-    # Test preprocessing with multiple strategies
-    print("Testing preprocessing module...")
-    
-    strategies = ['mean', 'knn']
-    
-    for strategy in strategies:
-        try:
-            print(f"\n{'='*80}")
-            print(f"Testing with {strategy} imputation")
-            print(f"{'='*80}")
-            
-            result = preprocess_data(
-                imputation_strategy=strategy,
-                remove_metals=False,
-                for_classification=False
-            )
-            
-            print(f"\n✓ Preprocessing test successful for {strategy}")
-            print(f"  X_train shape: {result['X_train'].shape}")
-            print(f"  X_test shape: {result['X_test'].shape}")
-            
-        except Exception as e:
-            print(f"\n✗ Error with {strategy}: {e}")
-            import traceback
-            traceback.print_exc()
+def make_scaler(scaler_type: Optional[str]):
+    """Create a scaler from a config value."""
+    if scaler_type in {None, "none", False}:
+        return None
+    if scaler_type == "robust":
+        return RobustScaler()
+    if scaler_type == "standard":
+        return StandardScaler()
+    raise ValueError(f"Unknown scaler type: {scaler_type}")
 
 
-def split_and_scale_data(
+def _stratify_target(y: pd.Series, task: str):
+    if task == "classification":
+        counts = y.value_counts()
+        return y if len(counts) > 1 and counts.min() >= 2 else None
+
+    # Regression stratification by bins is useful only when every bin has enough samples.
+    try:
+        binned = pd.qcut(y, q=min(5, y.nunique()), labels=False, duplicates="drop")
+        counts = pd.Series(binned).value_counts()
+        return binned if len(counts) > 1 and counts.min() >= 2 else None
+    except ValueError:
+        return None
+
+
+def _hash_indices(indices: List[Any]) -> str:
+    payload = json.dumps([str(index) for index in indices], sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def split_preprocess_data(
     X: pd.DataFrame,
     y: pd.Series,
     feature_names: List[str],
+    task: str,
+    metadata: Optional[pd.DataFrame] = None,
     test_size: float = 0.2,
     random_state: int = 42,
-    scaler_type: str = 'robust'
-) -> Dict:
+    imputation_strategy: str = "median",
+    scaler_type: Optional[str] = "robust",
+    apply_smote: bool = False,
+    output_dir: str | Path | None = None,
+    run_name: str = "default",
+) -> Dict[str, Any]:
     """
-    Split data into train/test sets and apply scaling.
-    
-    Args:
-        X: Feature DataFrame
-        y: Target Series
-        feature_names: List of feature names
-        test_size: Fraction of data to use for test set
-        random_state: Random seed
-        scaler_type: Type of scaler ('robust', 'standard', or None)
-    
-    Returns:
-        Dictionary with keys: X_train, X_test, y_train, y_test, scaler
+    Split first, then fit imputation/scaling on training data only.
     """
-    print(f"Splitting data: {100*(1-test_size):.0f}% train, {100*test_size:.0f}% test...")
-    
-    # Split the data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, 
-        test_size=test_size, 
+    assert_no_leakage_features(feature_names, task)
+
+    X = X[feature_names].apply(pd.to_numeric, errors="coerce")
+    y = y.loc[X.index]
+    metadata = metadata.loc[X.index] if metadata is not None and not metadata.empty else pd.DataFrame(index=X.index)
+
+    stratify = _stratify_target(y, task)
+    split = train_test_split(
+        X,
+        y,
+        metadata,
+        test_size=test_size,
         random_state=random_state,
-        shuffle=True
+        shuffle=True,
+        stratify=stratify,
     )
-    
-    print(f"  Train: {len(X_train)} samples")
-    print(f"  Test: {len(X_test)} samples")
-    
-    # Apply scaling
-    scaler = None
-    if scaler_type:
-        print(f"Applying {scaler_type} scaling...")
-        
-        if scaler_type == 'robust':
-            scaler = RobustScaler()
-        elif scaler_type == 'standard':
-            scaler = StandardScaler()
-        else:
-            raise ValueError(f"Unknown scaler type: {scaler_type}")
-        
-        X_train = pd.DataFrame(
-            scaler.fit_transform(X_train),
-            columns=feature_names,
-            index=X_train.index
-        )
-        
-        X_test = pd.DataFrame(
-            scaler.transform(X_test),
-            columns=feature_names,
-            index=X_test.index
-        )
-        
-        print(f"  ✓ Scaling applied")
-    
-    return {
-        'X_train': X_train,
-        'X_test': X_test,
-        'y_train': y_train,
-        'y_test': y_test,
-        'scaler': scaler,
-        'feature_names': feature_names
+    X_train_raw, X_test_raw, y_train, y_test, metadata_train, metadata_test = split
+
+    all_nan_cols = X_train_raw.columns[X_train_raw.isna().all()].tolist()
+    if all_nan_cols:
+        X_train_raw = X_train_raw.drop(columns=all_nan_cols)
+        X_test_raw = X_test_raw.drop(columns=all_nan_cols)
+        feature_names = [feature for feature in feature_names if feature not in all_nan_cols]
+
+    imputer = make_imputer(imputation_strategy)
+    X_train_arr = imputer.fit_transform(X_train_raw)
+    X_test_arr = imputer.transform(X_test_raw)
+
+    X_train = pd.DataFrame(X_train_arr, columns=feature_names, index=X_train_raw.index)
+    X_test = pd.DataFrame(X_test_arr, columns=feature_names, index=X_test_raw.index)
+
+    scaler = make_scaler(scaler_type)
+    if scaler is not None:
+        X_train = pd.DataFrame(scaler.fit_transform(X_train), columns=feature_names, index=X_train.index)
+        X_test = pd.DataFrame(scaler.transform(X_test), columns=feature_names, index=X_test.index)
+
+    smote_applied = False
+    if task == "classification" and apply_smote:
+        counts = y_train.value_counts()
+        if len(counts) > 1 and counts.min() >= 2 and counts.max() / counts.min() > 1.5:
+            k_neighbors = min(5, int(counts.min()) - 1)
+            if k_neighbors >= 1:
+                smote = SMOTE(random_state=random_state, k_neighbors=k_neighbors)
+                X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+                X_train = pd.DataFrame(X_resampled, columns=feature_names)
+                y_train = pd.Series(y_resampled, name=y.name)
+                smote_applied = True
+
+    split_manifest = {
+        "task": task,
+        "run_name": run_name,
+        "n_samples": int(len(X)),
+        "n_train": int(len(X_train)),
+        "n_test": int(len(X_test)),
+        "n_features": int(len(feature_names)),
+        "feature_names": feature_names,
+        "test_size": test_size,
+        "random_state": random_state,
+        "imputation_strategy": imputation_strategy,
+        "scaler": scaler_type,
+        "smote_requested": bool(apply_smote),
+        "smote_applied": smote_applied,
+        "train_index_checksum": _hash_indices(list(X_train_raw.index)),
+        "test_index_checksum": _hash_indices(list(X_test_raw.index)),
     }
+
+    result = {
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+        "metadata_train": metadata_train,
+        "metadata_test": metadata_test,
+        "feature_names": feature_names,
+        "imputer": imputer,
+        "scaler": scaler,
+        "split_manifest": split_manifest,
+    }
+
+    if output_dir is not None:
+        save_preprocessed_data(result, output_dir=output_dir, run_name=run_name)
+
+    return result
+
+
+def save_preprocessed_data(result: Dict[str, Any], output_dir: str | Path, run_name: str) -> None:
+    """Save split/preprocessing artifacts."""
+    output_path = Path(output_dir) / run_name
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    for key in ["X_train", "X_test", "y_train", "y_test", "metadata_train", "metadata_test"]:
+        joblib.dump(result[key], output_path / f"{key}.pkl")
+
+    joblib.dump(result["feature_names"], output_path / "feature_names.pkl")
+    joblib.dump(result["imputer"], output_path / "imputer.pkl")
+    if result["scaler"] is not None:
+        joblib.dump(result["scaler"], output_path / "scaler.pkl")
+
+    with (output_path / "split_manifest.json").open("w", encoding="utf-8") as handle:
+        json.dump(result["split_manifest"], handle, indent=2, default=str)
+
+
+if __name__ == "__main__":
+    print("Use run_pipeline.py to prepare leakage-free train/test splits.")
 

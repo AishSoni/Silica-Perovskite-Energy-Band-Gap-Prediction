@@ -467,7 +467,7 @@ class PerovskiteFeaturizer:
 
 
 def featurize_data(
-    input_path: str = "data/raw/double_perovskites_raw.csv",  # UPDATED to use new data
+    input_path: str = "data/processed/validated_materials.csv",
     output_path: str = "data/processed/perovskites_features.csv",
     feature_list_path: str = "data/processed/features_list.csv",
     use_structure_features: bool = False  # Set to True if structure column has valid data
@@ -476,7 +476,7 @@ def featurize_data(
     Main function to featurize double perovskite data.
     
     Args:
-        input_path: Path to raw data CSV (default: double_perovskites_raw.csv)
+        input_path: Path to validated materials CSV
         output_path: Path to save featurized data
         feature_list_path: Path to save feature list
         use_structure_features: Whether to compute structure-based features (slower)
@@ -509,12 +509,11 @@ def featurize_data(
 
 
 if __name__ == "__main__":
-    # Test featurization on new double perovskite data
-    print("Testing featurization module on double perovskites...")
+    print("Testing featurization module on validated double perovskites...")
     
     try:
         df = featurize_data(
-            input_path="data/raw/double_perovskites_raw.csv",
+            input_path="data/processed/validated_materials.csv",
             use_structure_features=False  # Set to True if structures are available
         )
         print("\nFeaturization test successful")

@@ -1,553 +1,291 @@
 """
-Main pipeline script for perovskite bandgap prediction.
-Orchestrates the entire ML workflow from data loading to evaluation.
-
-Usage:
-    python run_pipeline.py           # Uses F10 (10 features)
-    python run_pipeline.py F22       # Uses F22 (22 features)
-    python run_pipeline.py F10 F22   # Trains both
+Corrected end-to-end pipeline for double-perovskite band-gap modeling.
 """
 
-import sys
+from __future__ import annotations
+
 import argparse
+import json
 from pathlib import Path
-import warnings
-warnings.filterwarnings('ignore')
+from typing import Any, Dict, Iterable, List
 
-import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import seaborn as sns
-import joblib
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
-
-from src.utils import set_seeds, print_section, save_json, get_system_info
-from src.data_io import prepare_training_data
-from src.preprocess import split_and_scale_data
-from src.models import train_models
+from download_data import run_download
+from src.data_io import prepare_training_frame
 from src.eval import evaluate_model
+from src.featurize import featurize_data
+from src.models import train_models
+from src.pipeline_config import ensure_dir, load_config, path_from_config
+from src.preprocess import split_preprocess_data
+from src.reduce_features import select_feature_subsets
+from src.utils import get_system_info, save_json, set_seeds
+from src.validate_dataset import run_validation
 
 
-def create_validation_plots(subset_name, X, y, feature_names, output_dir="validation", task='regression'):
-    """
-    Create validation plots for dataset quality assessment.
-    
-    Args:
-        subset_name: Name of feature subset (e.g., F10, F22)
-        X: Feature DataFrame
-        y: Target Series (bandgap for regression, boolean for classification)
-        feature_names: List of feature names
-        output_dir: Directory to save plots
-        task: 'regression' or 'classification'
-    """
-    output_dir = Path(output_dir) / subset_name
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print(f"\nCreating validation plots for {subset_name}...")
-    
-    # 1. Target distribution
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    if task == 'regression':
-        # Continuous target histogram
-        ax.hist(y, bins=50, edgecolor='black', alpha=0.7, color='skyblue')
-        ax.axvline(y.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean = {y.mean():.2f} eV')
-        ax.axvline(y.median(), color='green', linestyle='--', linewidth=2, label=f'Median = {y.median():.2f} eV')
-        
-        # Highlight PV-relevant range
-        ax.axvspan(1.2, 1.8, alpha=0.2, color='yellow', label='PV-relevant (1.2-1.8 eV)')
-        
-        ax.set_xlabel('Bandgap (eV)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Frequency', fontsize=12, fontweight='bold')
-        ax.set_title(f'{subset_name} - Bandgap Distribution', fontsize=14, fontweight='bold')
-        
-        # Add statistics
-        pv_count = np.sum((y >= 1.2) & (y <= 1.8))
-        pv_pct = pv_count / len(y) * 100
-        text = f"Total: {len(y)}\nPV-relevant: {pv_count} ({pv_pct:.1f}%)\nRange: {y.min():.2f} - {y.max():.2f} eV"
-        
-    else:  # classification
-        # Bar plot for boolean target
-        counts = y.value_counts()
-        labels = ['Indirect', 'Direct'] if len(counts) == 2 else counts.index.tolist()
-        ax.bar(labels, counts.values, edgecolor='black', alpha=0.7, color=['skyblue', 'coral'])
-        
-        ax.set_xlabel('Bandgap Type', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Frequency', fontsize=12, fontweight='bold')
-        ax.set_title(f'{subset_name} - Bandgap Type Distribution', fontsize=14, fontweight='bold')
-        
-        # Add percentages on bars
-        for i, (label, count) in enumerate(zip(labels, counts.values)):
-            pct = count / len(y) * 100
-            ax.text(i, count, f'{count}\n({pct:.1f}%)', ha='center', va='bottom', fontweight='bold')
-        
-        text = f"Total: {len(y)}\nBalance: {counts.min()}/{counts.max()}"
-    
-    ax.legend()
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    ax.text(0.98, 0.98, text, transform=ax.transAxes,
-           verticalalignment='top', horizontalalignment='right',
-           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8), fontsize=10)
-    
-    plt.tight_layout()
-    filename = 'bandgap_distribution.png' if task == 'regression' else 'target_distribution.png'
-    plt.savefig(output_dir / filename, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"  ✓ Target distribution saved")
-    
-    # 2. Feature correlation heatmap
-    if len(feature_names) <= 25:  # Only if not too many features
-        fig, ax = plt.subplots(figsize=(12, 10))
-        corr_matrix = X.corr()
-        sns.heatmap(corr_matrix, annot=len(feature_names) <= 15, fmt='.2f', 
-                   cmap='coolwarm', center=0, square=True, ax=ax,
-                   cbar_kws={'label': 'Correlation'})
-        ax.set_title(f'{subset_name} - Feature Correlation Matrix', fontsize=14, fontweight='bold')
-        plt.tight_layout()
-        plt.savefig(output_dir / 'feature_correlation.png', dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Feature correlation matrix saved")
-    
-    # 3. Feature distributions (top 6 most important, or all if fewer)
-    n_features_to_plot = min(6, len(feature_names))
-    if n_features_to_plot > 0:
-        n_rows = (n_features_to_plot + 2) // 3  # Calculate rows needed
-        n_cols = min(3, n_features_to_plot)
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-        
-        # Handle case with single plot
-        if n_features_to_plot == 1:
-            axes = [axes]
-        else:
-            axes = axes.ravel() if n_features_to_plot > 1 else [axes]
-        
-        for i, feat in enumerate(feature_names[:n_features_to_plot]):
-            if feat in X.columns:
-                axes[i].hist(X[feat], bins=30, edgecolor='black', alpha=0.7)
-                axes[i].set_title(feat, fontsize=10, fontweight='bold')
-                axes[i].set_xlabel('Value', fontsize=9)
-                axes[i].set_ylabel('Frequency', fontsize=9)
-                axes[i].grid(True, alpha=0.3)
-        
-        # Hide unused subplots
-        for i in range(n_features_to_plot, len(axes)):
-            axes[i].set_visible(False)
-        
-        plt.suptitle(f'{subset_name} - Top Feature Distributions', fontsize=14, fontweight='bold')
-        plt.tight_layout()
-        plt.savefig(output_dir / 'feature_distributions.png', dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  ✓ Feature distributions saved")
-    
-    print(f"✓ Validation plots saved to {output_dir}")
+GENERATED_PATTERNS = [
+    "data/raw/*.csv",
+    "data/raw/*.json",
+    "data/processed/*.csv",
+    "data/processed/*.pkl",
+    "data/processed/*.json",
+    "data/processed/features_list.csv",
+    "results/*.json",
+    "results/*.csv",
+    "results/*.png",
+    "results/feature_sets/*.txt",
+    "results/feature_sets/*.csv",
+    "results/dataset_validation/*.json",
+    "results/dataset_validation/*.csv",
+    "results/dataset_validation/*.txt",
+    "figures/**/*.png",
+    "validation/**/*.png",
+    "models/**/*.pkl",
+    "models/**/*.json",
+]
 
 
-def create_model_comparison(all_results, output_dir="results", task='regression'):
-    """
-    Create comprehensive model comparison visualizations and tables.
-    
-    Args:
-        all_results: Dictionary of results from all feature subsets and models
-        output_dir: Directory to save outputs
-        task: 'regression' or 'classification'
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("\nCreating model comparison visualizations...")
-    
-    # Prepare data for comparison
-    comparison_data = []
-    for subset_name, models in all_results.items():
-        for model_name, metrics in models.items():
-            if task == 'regression':
-                comparison_data.append({
-                    'Subset': subset_name,
-                    'Model': model_name.replace('_regression', '').upper(),
-                    'R²': metrics.get('r2', metrics.get('R²', 0)),
-                    'MAE': metrics.get('mae', metrics.get('MAE', 0)),
-                    'RMSE': metrics.get('rmse', metrics.get('RMSE', 0))
-                })
-            else:  # classification
-                comparison_data.append({
-                    'Subset': subset_name,
-                    'Model': model_name.replace('_classification', '').upper(),
-                    'Accuracy': metrics.get('Accuracy', 0),
-                    'F1-Score': metrics.get('F1-Score', 0),
-                    'Precision': metrics.get('Precision', 0),
-                    'Recall': metrics.get('Recall', 0)
-                })
-    
-    if not comparison_data:
-        print("  ⚠ No results to compare")
-        return
-    
-    df_comparison = pd.DataFrame(comparison_data)
-    
-    # 1. Performance comparison bar plot
-    if task == 'regression':
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        metrics_to_plot = [('R²', 'R² Score', 'higher is better'),
-                           ('MAE', 'MAE (eV)', 'lower is better'),
-                           ('RMSE', 'RMSE (eV)', 'lower is better')]
-        main_metric = 'R²'
-    else:  # classification
-        fig, axes = plt.subplots(1, 4, figsize=(24, 6))
-        metrics_to_plot = [('Accuracy', 'Accuracy', 'higher is better'),
-                           ('F1-Score', 'F1-Score', 'higher is better'),
-                           ('Precision', 'Precision', 'higher is better'),
-                           ('Recall', 'Recall', 'higher is better')]
-        main_metric = 'Accuracy'
-    
-    for ax, (metric, label, note) in zip(axes, metrics_to_plot):
-        df_pivot = df_comparison.pivot(index='Model', columns='Subset', values=metric)
-        df_pivot.plot(kind='bar', ax=ax, width=0.8)
-        ax.set_title(f'{label}\n({note})', fontsize=12, fontweight='bold')
-        ax.set_ylabel(label, fontsize=11)
-        ax.set_xlabel('Model', fontsize=11)
-        ax.legend(title='Feature Subset', fontsize=10)
-        ax.grid(True, alpha=0.3, axis='y')
-        ax.tick_params(axis='x', rotation=45)
-        
-        # Add target line for relevant metrics
-        if task == 'regression' and metric == 'MAE':
-            ax.axhline(0.45, color='red', linestyle='--', linewidth=2, 
-                      label='Target (≤0.45 eV)', alpha=0.7)
-            ax.legend(title='Feature Subset', fontsize=10)
-        elif task == 'classification' and metric == 'Accuracy':
-            ax.axhline(0.80, color='red', linestyle='--', linewidth=2, 
-                      label='Target (≥0.80)', alpha=0.7)
-            ax.legend(title='Feature Subset', fontsize=10)
-    
-    title = 'Model Performance Comparison - Regression' if task == 'regression' else 'Model Performance Comparison - Classification'
-    plt.suptitle(title, fontsize=16, fontweight='bold', y=1.02)
-    plt.tight_layout()
-    plt.savefig(output_dir / 'model_comparison.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"  ✓ Model comparison plot saved")
-    
-    # 2. Best model summary table
-    best_models = df_comparison.loc[df_comparison.groupby('Subset')[main_metric].idxmax()]
-    
-    print("\n" + "="*80)
-    print("BEST MODEL PER FEATURE SUBSET")
-    print("="*80)
-    for _, row in best_models.iterrows():
-        print(f"\n{row['Subset']}:")
-        print(f"  Best Model: {row['Model']}")
-        if task == 'regression':
-            print(f"  R² = {row['R²']:.4f}")
-            print(f"  MAE = {row['MAE']:.4f} eV")
-            print(f"  RMSE = {row['RMSE']:.4f} eV")
-        else:  # classification
-            print(f"  Accuracy = {row['Accuracy']:.4f}")
-            print(f"  F1-Score = {row['F1-Score']:.4f}")
-            print(f"  Precision = {row['Precision']:.4f}")
-            print(f"  Recall = {row['Recall']:.4f}")
-    print("="*80)
-    
-    # Save comparison table
-    df_comparison.to_csv(output_dir / 'model_comparison.csv', index=False)
-    print(f"\n✓ Model comparison table saved to {output_dir / 'model_comparison.csv'}")
-    
-    return df_comparison
+def clean_generated_outputs() -> None:
+    """Remove generated outputs while preserving .gitkeep placeholders."""
+    for pattern in GENERATED_PATTERNS:
+        for path in Path(".").glob(pattern):
+            if path.name == ".gitkeep" or not path.is_file():
+                continue
+            path.unlink()
 
 
-def parse_arguments():
-    """
-    Parse command-line arguments.
-    """
-    parser = argparse.ArgumentParser(
-        description='Train perovskite bandgap prediction models',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python run_pipeline.py                    # Train regression with F10 (default)
-  python run_pipeline.py F22                # Train regression with F22
-  python run_pipeline.py F10 F22            # Train regression with both F10 and F22
-  python run_pipeline.py --task classification F10    # Train classification with F10
-  python run_pipeline.py --no-shap F10      # Skip SHAP analysis
-        """
+def _tasks(task_arg: str) -> List[str]:
+    return ["regression", "classification"] if task_arg == "both" else [task_arg]
+
+
+def _subset_sizes(config: Dict[str, Any]) -> List[int]:
+    sizes = config.get("modeling", {}).get("feature_subset_sizes", [10, 22])
+    return [int(size) for size in sizes]
+
+
+def _run_name(task: str, subset_name: str) -> str:
+    return f"{task}_{subset_name}"
+
+
+def _save_predictions(
+    model_name: str,
+    model,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    metadata_test: pd.DataFrame,
+    task: str,
+    output_dir: Path,
+) -> Path:
+    predictions = metadata_test.reset_index(drop=True).copy()
+    predictions["y_true"] = list(y_test.reset_index(drop=True))
+    predictions["y_pred"] = list(model.predict(X_test))
+    predictions["task"] = task
+    predictions["model"] = model_name
+
+    if task == "regression":
+        predictions["error"] = predictions["y_pred"] - predictions["y_true"]
+        predictions["absolute_error"] = predictions["error"].abs()
+    elif hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X_test)
+        if getattr(proba, "ndim", 1) == 2 and proba.shape[1] == 2:
+            predictions["probability_direct"] = proba[:, 1]
+
+    path = output_dir / f"{model_name}_predictions.csv"
+    predictions.to_csv(path, index=False)
+    return path
+
+
+def _evaluate_trained_models(
+    trained_models: Dict[str, Dict[str, Any]],
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    metadata_test: pd.DataFrame,
+    feature_names: List[str],
+    task: str,
+    subset_name: str,
+    config: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    figures_root = ensure_dir(Path(config["paths"]["figures_dir"]) / task / subset_name)
+    results_root = ensure_dir(Path(config["paths"]["results_dir"]) / "predictions" / task / subset_name)
+
+    metrics_by_model: Dict[str, Dict[str, Any]] = {}
+    for model_name, model_info in trained_models.items():
+        model = model_info["model"]
+        model_figures = figures_root / model_name
+        metrics = evaluate_model(
+            model=model,
+            X_test=X_test,
+            y_test=y_test,
+            task=task,
+            output_dir=str(model_figures),
+            model_name=model_name,
+            feature_names=feature_names,
+        )
+        prediction_path = _save_predictions(
+            model_name=model_name,
+            model=model,
+            X_test=X_test,
+            y_test=y_test,
+            metadata_test=metadata_test,
+            task=task,
+            output_dir=results_root,
+        )
+        metrics["predictions_path"] = str(prediction_path)
+        metrics_by_model[model_name] = metrics
+
+    return metrics_by_model
+
+
+def _dataset_manifest_metadata(config: Dict[str, Any]) -> Dict[str, Any]:
+    manifest_path = path_from_config(config, "manifest")
+    if not manifest_path.exists():
+        return {"dataset_manifest": str(manifest_path), "dataset_manifest_available": False}
+    with manifest_path.open("r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    return {
+        "dataset_manifest": str(manifest_path),
+        "dataset_manifest_available": True,
+        "dataset_name": manifest.get("dataset_name"),
+        "dataset_family": manifest.get("dataset_family"),
+        "config_checksum": manifest.get("config_checksum"),
+        "material_id_checksum": manifest.get("material_id_checksum"),
+    }
+
+
+def run_task(task: str, config: Dict[str, Any], config_path: str, feature_selection: bool) -> Dict[str, Any]:
+    """Run preprocessing, optional feature selection, training, and evaluation for one task."""
+    modeling = config.get("modeling", {})
+    X, y, feature_names, metadata = prepare_training_frame(task=task, config_path=config_path)
+
+    base_split = split_preprocess_data(
+        X=X,
+        y=y,
+        feature_names=feature_names,
+        task=task,
+        metadata=metadata,
+        test_size=float(modeling.get("test_size", 0.2)),
+        random_state=int(modeling.get("random_state", 42)),
+        imputation_strategy=str(modeling.get("imputation_strategy", "median")),
+        scaler_type=modeling.get("scaler", "robust"),
+        apply_smote=bool(modeling.get("apply_smote", True)),
+        output_dir=Path("data/processed/splits"),
+        run_name=_run_name(task, "all_features"),
     )
-    
-    parser.add_argument(
-        'feature_subsets',
-        nargs='*',
-        default=['F10'],
-        help='Feature subsets to train (e.g., F10, F22). Default: F10'
-    )
-    
-    parser.add_argument(
-        '--task',
-        type=str,
-        choices=['regression', 'classification'],
-        default='regression',
-        help='Task type: regression (bandgap) or classification (gap type). Default: regression'
-    )
-    
-    parser.add_argument(
-        '--no-shap',
-        action='store_true',
-        help='Skip SHAP analysis (faster execution)'
-    )
-    
+
+    subsets: Dict[str, List[str]] = {"all_features": list(base_split["feature_names"])}
+    feature_selection_scores: Dict[str, Any] = {}
+
+    if feature_selection:
+        selected = select_feature_subsets(
+            X_train=base_split["X_train"],
+            y_train=base_split["y_train"],
+            task=task,
+            subset_sizes=_subset_sizes(config),
+            output_dir=config["paths"]["feature_sets_dir"],
+            random_state=int(modeling.get("random_state", 42)),
+        )
+        subsets = {name: payload["features"] for name, payload in selected.items()}
+        feature_selection_scores = {name: payload["cv_score"] for name, payload in selected.items()}
+
+    task_results: Dict[str, Any] = {
+        "feature_selection_scores": feature_selection_scores,
+        "subsets": {},
+    }
+
+    for subset_name, subset_features in subsets.items():
+        split = base_split
+        X_train = split["X_train"][subset_features]
+        X_test = split["X_test"][subset_features]
+        models_dir = Path(config["paths"]["models_dir"]) / task / subset_name
+        trained = train_models(
+            X_train=X_train,
+            y_train=split["y_train"],
+            X_test=X_test,
+            y_test=split["y_test"],
+            feature_names=subset_features,
+            output_dir=str(models_dir),
+            task=task,
+        )
+        model_metadata = {
+            "task": task,
+            "subset_name": subset_name,
+            "feature_names": subset_features,
+            "split_manifest": split["split_manifest"],
+            **_dataset_manifest_metadata(config),
+        }
+        with (models_dir / "training_metadata.json").open("w", encoding="utf-8") as handle:
+            json.dump(model_metadata, handle, indent=2, default=str)
+        metrics = _evaluate_trained_models(
+            trained_models=trained,
+            X_test=X_test,
+            y_test=split["y_test"],
+            metadata_test=split["metadata_test"],
+            feature_names=subset_features,
+            task=task,
+            subset_name=subset_name,
+            config=config,
+        )
+        task_results["subsets"][subset_name] = {
+            "n_features": len(subset_features),
+            "features": subset_features,
+            "metrics": metrics,
+        }
+
+    return task_results
+
+
+def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
+    config = load_config(args.config)
+    set_seeds(int(config.get("modeling", {}).get("random_state", 42)))
+
+    if args.clean:
+        clean_generated_outputs()
+
+    if args.download:
+        run_download(args.config)
+
+    if args.validate:
+        run_validation(args.config)
+
+    if args.featurize:
+        featurize_data(
+            input_path=str(path_from_config(config, "validated_csv")),
+            output_path=str(path_from_config(config, "features_csv")),
+            feature_list_path="data/processed/features_list.csv",
+            use_structure_features=False,
+        )
+
+    all_results: Dict[str, Any] = {
+        "system_info": get_system_info(),
+        "config_path": args.config,
+        "tasks": {},
+    }
+
+    for task in _tasks(args.task):
+        all_results["tasks"][task] = run_task(
+            task=task,
+            config=config,
+            config_path=args.config,
+            feature_selection=args.feature_selection,
+        )
+
+    results_path = Path(config["paths"]["results_dir"]) / "corrected_pipeline_results.json"
+    save_json(all_results, str(results_path))
+    return all_results
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the corrected perovskite ML pipeline.")
+    parser.add_argument("--config", default="experiments/query_config.yaml", help="Canonical query config path.")
+    parser.add_argument("--task", choices=["regression", "classification", "both"], default="both")
+    parser.add_argument("--download", action="store_true", help="Download fresh Materials Project candidates.")
+    parser.add_argument("--validate", action="store_true", help="Validate downloaded candidates.")
+    parser.add_argument("--featurize", action="store_true", help="Generate features from validated materials.")
+    parser.add_argument("--feature-selection", action="store_true", help="Create train-only feature subsets.")
+    parser.add_argument("--clean", action="store_true", help="Remove generated outputs before running.")
     return parser.parse_args()
 
 
-def main():
-    """
-    Run the complete ML pipeline.
-    """
-    # Parse arguments
-    args = parse_arguments()
-    feature_subsets = args.feature_subsets
-    task = args.task
-    enable_shap = not args.no_shap
-    
-    # Set random seeds for reproducibility
-    set_seeds(42)
-    
-    task_display = task.upper()
-    print_section(f"PEROVSKITE {task_display} PREDICTION PIPELINE", "=", 100)
-    print(f"\nTask: {task_display}")
-    print(f"Feature subsets: {', '.join(feature_subsets)}")
-    print(f"SHAP analysis: {'Enabled' if enable_shap else 'Disabled'}")
-    
-    # Save system information for reproducibility
-    print("\nRecording system information...")
-    system_info = get_system_info()
-    system_info['task'] = task
-    system_info['feature_subsets'] = feature_subsets
-    system_info['shap_enabled'] = enable_shap
-    save_json(system_info, "experiments/system_info.json")
-    
-    # Results for all subsets
-    all_results = {}
-    
-    # Train models for each feature subset
-    for subset_name in feature_subsets:
-        print_section(f"TRAINING WITH FEATURE SUBSET: {subset_name}", "=", 100)
-        
-        try:
-            # Step 1: Load and prepare data
-            print_section("STEP 1: DATA LOADING", "-", 100)
-            X, y, feature_names = prepare_training_data(
-                subset_name=subset_name,
-                features_path="data/processed/perovskites_features.csv",
-                features_dir="results/feature_sets",
-                task=task
-            )
-            print(f"✓ Loaded {len(X)} samples with {len(feature_names)} features")
-            
-            # Create validation plots for data quality assessment
-            print_section("STEP 1.5: DATA VALIDATION", "-", 100)
-            try:
-                create_validation_plots(subset_name, X, y, feature_names, output_dir="validation", task=task)
-            except Exception as e:
-                print(f"  ⚠ Warning: Validation plots failed: {e}")
-            
-            # Step 2: Split and scale data
-            print_section("STEP 2: DATA PREPROCESSING", "-", 100)
-            split_data = split_and_scale_data(
-                X=X,
-                y=y,
-                feature_names=feature_names,
-                test_size=0.2,
-                random_state=42
-            )
-            
-            X_train = split_data['X_train']
-            X_test = split_data['X_test']
-            y_train = split_data['y_train']
-            y_test = split_data['y_test']
-            
-            print(f"✓ Train set: {len(X_train)} samples")
-            print(f"✓ Test set: {len(X_test)} samples")
-            
-            # Save preprocessed data
-            output_dir = Path("data/processed") / subset_name
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            import joblib
-            joblib.dump(X_train, output_dir / "X_train.pkl")
-            joblib.dump(X_test, output_dir / "X_test.pkl")
-            joblib.dump(y_train, output_dir / "y_train.pkl")
-            joblib.dump(y_test, output_dir / "y_test.pkl")
-            joblib.dump(feature_names, output_dir / "feature_names.pkl")
-            
-            print(f"✓ Data saved to {output_dir}")
-            
-            # Step 3: Train models
-            print_section("STEP 3: MODEL TRAINING", "-", 100)
-            models_dir = Path("models") / subset_name
-            models_dir.mkdir(parents=True, exist_ok=True)
-            
-            trained_models = train_models(
-                X_train=X_train,
-                y_train=y_train,
-                X_test=X_test,
-                y_test=y_test,
-                feature_names=feature_names,
-                output_dir=str(models_dir),
-                task=task
-            )
-            
-            print(f"✓ Models trained and saved to {models_dir}")
-            
-            # Step 4: Evaluate models
-            print_section("STEP 4: MODEL EVALUATION", "-", 100)
-            figures_dir = Path("figures") / subset_name
-            figures_dir.mkdir(parents=True, exist_ok=True)
-            
-            subset_results = {}
-            for model_name, model_info in trained_models.items():
-                print(f"\n--- Evaluating {model_name} ---")
-                try:
-                    metrics = evaluate_model(
-                        model=model_info['model'],
-                        X_test=X_test,
-                        y_test=y_test,
-                        task=task,
-                        output_dir=str(figures_dir / model_name),
-                        model_name=model_name,
-                        feature_names=feature_names
-                    )
-                    
-                    if metrics:
-                        subset_results[model_name] = metrics
-                        
-                        # Print key metrics based on task
-                        if task == 'regression':
-                            print(f"  R² = {metrics.get('r2', metrics.get('R²', 0)):.4f}")
-                            print(f"  MAE = {metrics.get('mae', metrics.get('MAE', 0)):.4f} eV")
-                            print(f"  RMSE = {metrics.get('rmse', metrics.get('RMSE', 0)):.4f} eV")
-                        else:  # classification
-                            print(f"  Accuracy = {metrics.get('Accuracy', 0):.4f}")
-                            print(f"  F1-Score = {metrics.get('F1-Score', 0):.4f}")
-                            print(f"  Precision = {metrics.get('Precision', 0):.4f}")
-                            print(f"  Recall = {metrics.get('Recall', 0):.4f}")
-                            if 'ROC-AUC' in metrics:
-                                print(f"  ROC-AUC = {metrics.get('ROC-AUC', 0):.4f}")
-                    else:
-                        print(f"  ⚠ Warning: No metrics returned")
-                    
-                    # SHAP analysis for tree-based models
-                    if enable_shap and model_name in ['lgbm_regression', 'xgb_regression', 'rf_regression', 'catboost_regression',
-                                                      'lgbm_classification', 'xgb_classification', 'rf_classification', 'catboost_classification']:
-                        print(f"\n  Running SHAP analysis for {model_name}...")
-                        try:
-                            from src.eval import ModelEvaluator
-                            evaluator = ModelEvaluator(output_dir=str(figures_dir / model_name))
-                            
-                            # Use a sample for SHAP (faster) - 200 samples or all if less
-                            shap_sample_size = min(200, len(X_test))
-                            X_shap = X_test.sample(n=shap_sample_size, random_state=42) if len(X_test) > shap_sample_size else X_test
-                            
-                            evaluator.shap_analysis(
-                                model=model_info['model'],
-                                X=X_shap,
-                                feature_names=feature_names,
-                                max_display=min(20, len(feature_names)),
-                                prefix=f"shap_{model_name}"
-                            )
-                        except Exception as shap_error:
-                            print(f"  ⚠ SHAP analysis failed: {shap_error}")
-                    
-                except Exception as e:
-                    print(f"  ⚠ Evaluation error: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-            
-            all_results[subset_name] = subset_results
-            
-            print(f"\n✓ {subset_name} complete!")
-            
-        except Exception as e:
-            print(f"\n✗ Error training {subset_name}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
-    
-    # Save overall results summary
-    if all_results:
-        results_path = Path("results/all_models_summary.json")
-        results_path.parent.mkdir(parents=True, exist_ok=True)
-        save_json(all_results, str(results_path))
-        print(f"\n✓ Results summary saved to {results_path}")
-        
-        # Create model comparison visualizations
-        print_section("CREATING MODEL COMPARISONS", "=", 100)
-        try:
-            create_model_comparison(all_results, output_dir="results", task=task)
-        except Exception as e:
-            print(f"  ⚠ Warning: Model comparison failed: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    # Final summary
-    print_section("PIPELINE COMPLETE", "=", 100)
-    print("\nResults Summary:")
-    print("-" * 100)
-    
-    for subset_name, models in all_results.items():
-        if models:  # Only if models exist
-            print(f"\n{subset_name}:")
-            for model_name, metrics in models.items():
-                if task == 'regression':
-                    r2 = metrics.get('r2', metrics.get('R²', 0))
-                    mae = metrics.get('mae', metrics.get('MAE', 0))
-                    rmse = metrics.get('rmse', metrics.get('RMSE', 0))
-                    print(f"  {model_name:20s}: R² = {r2:.4f}, MAE = {mae:.4f} eV, RMSE = {rmse:.4f} eV")
-                else:  # classification
-                    acc = metrics.get('Accuracy', 0)
-                    f1 = metrics.get('F1-Score', 0)
-                    prec = metrics.get('Precision', 0)
-                    rec = metrics.get('Recall', 0)
-                    auc = metrics.get('ROC-AUC', 'N/A')
-                    auc_str = f"{auc:.4f}" if isinstance(auc, (int, float)) else auc
-                    print(f"  {model_name:20s}: Acc = {acc:.4f}, F1 = {f1:.4f}, Prec = {prec:.4f}, Rec = {rec:.4f}, AUC = {auc_str}")
-        else:
-            print(f"\n{subset_name}: No results")
-    
-    print("\n" + "="*100)
-    
-    if task == 'regression':
-        print("\n🎉 SUCCESS! Models exceed targets:")
-        print("   Target: R² ≥ 0.40, MAE ≤ 0.45 eV")
-        print("   Achieved: R² up to 0.88, MAE as low as 0.35 eV")
-        
-        print("\nKey Findings:")
-        print("  ✓ 5,776 double perovskites (ABC2D6) analyzed")
-        print("  ✓ 5 models trained (LightGBM, XGBoost, RF, CatBoost, MLP)")
-        print("  ✓ Best: F22 XGBoost with R²=0.88, MAE=0.35 eV")
-        print("  ✓ Simpler: F10 XGBoost with R²=0.86, MAE=0.38 eV")
-    else:  # classification
-        print("\n🎉 SUCCESS! Classification models trained:")
-        print("   Target: Accuracy ≥ 0.80, F1 ≥ 0.80")
-        
-        print("\nKey Findings:")
-        print("  ✓ 5,776 double perovskites (ABC2D6) analyzed")
-        print("  ✓ 5 models trained (LightGBM, XGBoost, RF, CatBoost, MLP)")
-        print("  ✓ Task: Predict bandgap type (Direct vs Indirect)")
-    
-    print("\nOutputs:")
-    print(f"  - Validation plots: validation/{{{','.join(feature_subsets)}}}/")
-    print(f"  - Preprocessed data: data/processed/{{{','.join(feature_subsets)}}}/")
-    print(f"  - Trained models: models/{{{','.join(feature_subsets)}}}/")
-    print(f"  - Evaluation figures: figures/{{{','.join(feature_subsets)}}}/")
-    if enable_shap:
-        print(f"  - SHAP analysis: figures/{{{','.join(feature_subsets)}}}/{{model}}/shap_*.png")
-    print("  - Model comparison: results/model_comparison.png")
-    print("  - Results summary: results/all_models_summary.json")
-    print("  ✓ All plots and metrics saved for paper preparation")
-
-
 if __name__ == "__main__":
-    main()
+    run_pipeline(parse_args())
 

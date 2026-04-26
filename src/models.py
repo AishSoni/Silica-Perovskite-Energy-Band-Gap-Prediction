@@ -567,14 +567,18 @@ def train_models(
     # Train models based on task
     if task == 'regression':
         print("\n1. Training LightGBM (primary)...")
-        lgbm_model = trainer.train_lgbm_regression(X_train, y_train, X_test, y_test)
+        # Do not use the final test set for early stopping; the trainer creates
+        # an internal validation split from the training data.
+        lgbm_model = trainer.train_lgbm_regression(X_train, y_train)
         
         print("\n2. Training baseline models...")
         baseline_models = trainer.train_baseline_models(X_train, y_train, task='regression')
         
     else:  # classification
         print("\n1. Training XGBoost Classifier (primary)...")
-        xgb_model = trainer.train_xgb_classifier(X_train, y_train, X_test, y_test)
+        # Do not use the final test set for early stopping; the trainer creates
+        # an internal stratified validation split from the training data.
+        xgb_model = trainer.train_xgb_classifier(X_train, y_train)
         
         print("\n2. Training baseline models...")
         baseline_models = trainer.train_baseline_models(X_train, y_train, task='classification')
@@ -735,7 +739,7 @@ if __name__ == "__main__":
     
     try:
         # This requires preprocessed data to exist
-        result = train_models(
+        result = train_models_from_paths(
             X_train_path="data/processed/mean_regression_X_train.pkl",
             y_train_path="data/processed/mean_regression_y_train.pkl",
             X_test_path="data/processed/mean_regression_X_test.pkl",

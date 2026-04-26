@@ -17,7 +17,8 @@ import warnings
 from sklearn.metrics import (
     mean_absolute_error, mean_squared_error, r2_score,
     accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, roc_curve, confusion_matrix
+    roc_auc_score, roc_curve, confusion_matrix,
+    balanced_accuracy_score, average_precision_score
 )
 
 try:
@@ -109,22 +110,43 @@ class ModelEvaluator:
             Dictionary with metrics
         """
         accuracy = accuracy_score(y_true, y_pred)
-        precision = precision_score(y_true, y_pred, average='weighted', zero_division=0)
-        recall = recall_score(y_true, y_pred, average='weighted', zero_division=0)
-        f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+        balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
+        precision_weighted = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+        recall_weighted = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+        f1_weighted = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+        precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
+        recall_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
+        f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
         
         metrics = {
             'Accuracy': accuracy,
-            'Precision': precision,
-            'Recall': recall,
-            'F1-Score': f1
+            'Balanced Accuracy': balanced_accuracy,
+            'Precision Weighted': precision_weighted,
+            'Recall Weighted': recall_weighted,
+            'F1 Weighted': f1_weighted,
+            'Precision Macro': precision_macro,
+            'Recall Macro': recall_macro,
+            'F1 Macro': f1_macro,
+            # Backwards-compatible aliases now point to macro scores, which are safer for imbalance.
+            'Precision': precision_macro,
+            'Recall': recall_macro,
+            'F1-Score': f1_macro,
         }
+
+        labels = sorted(np.unique(np.concatenate([np.asarray(y_true), np.asarray(y_pred)])))
+        for label in labels:
+            label_name = "Direct" if bool(label) else "Indirect"
+            metrics[f"{label_name} Precision"] = precision_score(y_true, y_pred, labels=[label], average=None, zero_division=0)[0]
+            metrics[f"{label_name} Recall"] = recall_score(y_true, y_pred, labels=[label], average=None, zero_division=0)[0]
+            metrics[f"{label_name} F1"] = f1_score(y_true, y_pred, labels=[label], average=None, zero_division=0)[0]
         
         # Add ROC-AUC if probabilities available
         if y_pred_proba is not None:
             try:
                 if len(np.unique(y_true)) == 2:  # Binary classification
-                    roc_auc = roc_auc_score(y_true, y_pred_proba[:, 1])
+                    proba_positive = y_pred_proba[:, 1] if len(y_pred_proba.shape) == 2 else y_pred_proba
+                    roc_auc = roc_auc_score(y_true, proba_positive)
+                    metrics['PR-AUC'] = average_precision_score(y_true, proba_positive)
                 else:  # Multiclass
                     roc_auc = roc_auc_score(y_true, y_pred_proba, multi_class='ovr', average='weighted')
                 metrics['ROC-AUC'] = roc_auc
@@ -599,11 +621,15 @@ def evaluate_model(
     # Make predictions
     y_pred = model.predict(X_test)
     
+    y_pred_proba = None
+    if task == 'classification' and hasattr(model, 'predict_proba'):
+        y_pred_proba = model.predict_proba(X_test)
+
     # Compute metrics first (before any plotting that might fail)
     if task == 'regression':
         metrics = evaluator.regression_metrics(y_test, y_pred)
     else:  # classification
-        metrics = evaluator.classification_metrics(y_test, y_pred)
+        metrics = evaluator.classification_metrics(y_test, y_pred, y_pred_proba)
     
     # Now create plots
     if task == 'regression':
@@ -639,7 +665,7 @@ def evaluate_model(
                 print(f"  ⚠ Could not generate feature importance plot: {e}")
         
     else:  # classification
-        metrics = evaluator.classification_metrics(y_test, y_pred)
+        metrics = evaluator.classification_metrics(y_test, y_pred, y_pred_proba)
         
         # Create plots
         evaluator.confusion_matrix_plot(
@@ -648,8 +674,7 @@ def evaluate_model(
             filename="confusion_matrix.png"
         )
         
-        if hasattr(model, 'predict_proba'):
-            y_pred_proba = model.predict_proba(X_test)
+        if y_pred_proba is not None:
             if y_pred_proba.shape[1] == 2:  # Binary classification
                 evaluator.roc_curve_plot(
                     y_test, y_pred_proba[:, 1],
